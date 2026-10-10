@@ -193,13 +193,13 @@ export const REGIONS: Record<RegionId, RegionDef> = {
 export const REGION_ORDER: RegionId[] = ['eu', 'uk', 'jp', 'au'];
 
 export const ROLES: Record<RoleId, RoleDef> = {
-  packer: { id: 'packer', name: 'Packer', emoji: '📦', wage: 2600, unlockStage: 2, seat: 'floor', desc: 'Packs ~35 orders a day at a packing station.', firstName: 'Jordan' },
-  support: { id: 'support', name: 'Support agent', emoji: '🎧', wage: 2400, unlockStage: 2, seat: 'office', desc: 'Answers ~60 customer tickets a day following your policy.', firstName: 'Sam Rivera' },
-  marketer: { id: 'marketer', name: 'Growth marketer', emoji: '📈', wage: 5500, unlockStage: 2, seat: 'office', desc: 'Runs your ad tests weekly: pauses losers, scales winners. +10% ad click rate.', firstName: 'Rosa Lind' },
-  buyer: { id: 'buyer', name: 'Buyer', emoji: '🧾', wage: 4800, unlockStage: 3, seat: 'office', desc: 'Runs automatic reorder rules and negotiates a little harder.', firstName: 'Malik Osei' },
-  lead: { id: 'lead', name: 'Warehouse lead', emoji: '🦺', wage: 4200, unlockStage: 3, seat: 'floor', desc: '+15% packing speed per 15 packers. Required for a second shift.', firstName: 'Jordan' },
-  designer: { id: 'designer', name: 'Product designer', emoji: '✏️', wage: 6500, unlockStage: 4, seat: 'office', desc: 'Speeds up Product Lab projects by 50% each.', firstName: 'Ines Duarte' },
-  brandmgr: { id: 'brandmgr', name: 'Brand manager', emoji: '🎨', wage: 6000, unlockStage: 5, seat: 'office', desc: 'Runs an extra brand. Brands without a manager grow at half speed.', firstName: 'Theo Park' },
+  packer: { id: 'packer', name: 'Packer', emoji: '📦', wage: 2300, unlockStage: 2, seat: 'floor', desc: 'Packs ~35 orders a day at a packing station.', firstName: 'Jordan' },
+  support: { id: 'support', name: 'Support agent', emoji: '🎧', wage: 2200, unlockStage: 2, seat: 'office', desc: 'Answers ~60 customer tickets a day following your policy.', firstName: 'Sam Rivera' },
+  marketer: { id: 'marketer', name: 'Growth marketer', emoji: '📈', wage: 4200, unlockStage: 2, seat: 'office', desc: 'Runs your ad tests weekly: pauses losers, scales winners. +10% ad click rate.', firstName: 'Rosa Lind' },
+  buyer: { id: 'buyer', name: 'Buyer', emoji: '🧾', wage: 3800, unlockStage: 3, seat: 'office', desc: 'Runs automatic reorder rules and negotiates a little harder.', firstName: 'Malik Osei' },
+  lead: { id: 'lead', name: 'Warehouse lead', emoji: '🦺', wage: 3400, unlockStage: 3, seat: 'floor', desc: '+15% packing speed per 15 packers. Required for a second shift.', firstName: 'Jordan' },
+  designer: { id: 'designer', name: 'Product designer', emoji: '✏️', wage: 5000, unlockStage: 4, seat: 'office', desc: 'Speeds up Product Lab projects by 50% each.', firstName: 'Ines Duarte' },
+  brandmgr: { id: 'brandmgr', name: 'Brand manager', emoji: '🎨', wage: 4800, unlockStage: 5, seat: 'office', desc: 'Runs an extra brand. Brands without a manager grow at half speed.', firstName: 'Theo Park' },
 };
 export const ROLE_ORDER: RoleId[] = ['packer', 'support', 'marketer', 'buyer', 'lead', 'designer', 'brandmgr'];
 

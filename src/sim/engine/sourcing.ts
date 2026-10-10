@@ -13,7 +13,7 @@ import {
   SUPPLIERS,
   WIN_REORDER_QTY,
 } from '../data';
-import { activeContract, audiences, avgDailyOrders, def, freightPerUnit, incomingUnits, listPrice, liveProducts, round2, unitsPerOrder } from '../economics';
+import { activeContract, audiences, def, freightPerUnit, incomingUnits, listPrice, liveProducts, round2, steadyDailyUnits } from '../economics';
 import { chance, normal, pick } from '../rng';
 import type { Freight, GameState, ReorderRule, SupplierId } from '../types';
 import { type ActionResult, book, milestone, newProduct, nextId, notify, spendCash, spendOn, useHours } from './core';
@@ -70,6 +70,34 @@ export function research(s: GameState): ActionResult {
   const found = pick(s, hidden);
   s.revealed.push(found.id);
   notify(s, 'info', `Research paid off: ${found.name} looks promising.`, true);
+  return null;
+}
+
+/** How much you know about a product: 0 = just a name, 1 = quick scan, 2 = deep dive. */
+export function researchLevel(s: GameState, pid: string): number {
+  if (s.products[pid] || s.stage >= 3 || s.customDefs[pid]) return 2;
+  return s.research[pid] ?? 0;
+}
+
+export const RESEARCH_HOURS = { 1: 1, 2: 2 } as const;
+
+export function researchProduct(s: GameState, pid: string, depth: 1 | 2): ActionResult {
+  const cur = researchLevel(s, pid);
+  if (cur >= depth) return null;
+  if (depth === 2 && cur < 1) return 'Do a quick scan first.';
+  const err = useHours(s, RESEARCH_HOURS[depth]);
+  if (err) return err;
+  s.research[pid] = depth;
+  return null;
+}
+
+export function toggleShortlist(s: GameState, pid: string): ActionResult {
+  if (s.shortlist.includes(pid)) {
+    s.shortlist = s.shortlist.filter((x) => x !== pid);
+    return null;
+  }
+  if (s.shortlist.length >= 5) return 'Your shortlist holds 5 products. Drop one first.';
+  s.shortlist.push(pid);
   return null;
 }
 
@@ -195,6 +223,15 @@ export function hasPaymentTerms(s: GameState, supplierId: SupplierId): boolean {
   return s.relationship[supplierId] >= 75 || !!activeContract(s, supplierId);
 }
 
+/** The best terms: 30% up front, the rest 30 days after the goods arrive. */
+export function hasNet30(s: GameState, supplierId: SupplierId): boolean {
+  return !!activeContract(s, supplierId) || (s.stage >= 3 && s.relationship[supplierId] >= 90);
+}
+
+export function termsLabel(s: GameState, supplierId: SupplierId): string {
+  return hasNet30(s, supplierId) ? '30% now, 70% net 30 after delivery' : hasPaymentTerms(s, supplierId) ? '30% now, 70% when it ships' : 'Pay in full up front';
+}
+
 export function orderCost(s: GameState, freight: Freight, inspection: boolean): number {
   const n = s.negotiation;
   if (!n || n.agreedPrice === null) return 0;
@@ -253,6 +290,7 @@ export function createPO(
     delayDays: 0,
     totalCost: goods,
     balanceDue: round2(goods - upfront),
+    net30: terms && hasNet30(s, supplierId),
     auto,
   });
   s.relationship[supplierId] = Math.min(100, s.relationship[supplierId] + (qty >= 1000 ? 5 : 3));
@@ -291,7 +329,7 @@ export function setReorderRule(s: GameState, pid: string, patch: Partial<Reorder
 
 /** Days of stock (on hand + incoming) left for a product at the current sales pace. */
 export function coverDays(s: GameState, pid: string): number | null {
-  const daily = avgDailyOrders(s, pid, 7) * unitsPerOrder(s, pid);
+  const daily = steadyDailyUnits(s, pid);
   if (daily <= 0) return null;
   return (s.products[pid].inventory.onHand + incomingUnits(s, pid)) / daily;
 }

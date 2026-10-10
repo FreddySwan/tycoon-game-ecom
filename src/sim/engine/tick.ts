@@ -32,12 +32,12 @@ import {
   copycatMult,
 } from '../economics';
 import { binomial, chance, poisson, rand } from '../rng';
-import type { BacklogBucket, ChannelId, DailyRecord, GameState } from '../types';
-import { book, milestone, MILESTONE_LABELS, notify, randomCustomer, today } from './core';
+import type { BacklogBucket, ChannelId, DailyRecord, GameState, OrderSource } from '../types';
+import { adStat, book, countSource, milestone, MILESTONE_LABELS, notify, randomCustomer, slice, today } from './core';
 import { brandManaged, cashCrisis, chargeInterest, checkAmbitions, checkStageOffer, runLab, updateCredit } from './company';
 import { reorderDelayEvent, rollEvents, randomShipDelay } from './events';
 import { marketerPass } from './marketing';
-import { shipFromBucket } from './ops';
+import { leadPass, shipFromBucket } from './ops';
 import { expireCards, processDeliveries, processTickets } from './reviews';
 import { revealDue, runReorders, settleContracts } from './sourcing';
 import { onStore } from './storefront';
@@ -86,12 +86,12 @@ function cancelStaleOrders(s: GameState): void {
     if (s.day - b.day < 7 || b.orders <= 0) continue;
     const p = s.products[b.productId];
     const n = Math.round(b.orders);
-    book(s, 'refunds', b.revenue, { brandId: p.brandId });
+    book(s, 'refunds', b.revenue, { brandId: p.brandId, productId: b.productId, channel: b.channel });
     const unitCost = p.inventory.onHand > 0 ? p.inventory.costTotal / p.inventory.onHand : landedUnitCostSafe(s, b.productId);
     p.inventory.onHand += Math.round(b.units);
     p.inventory.costTotal = round2(p.inventory.costTotal + unitCost * b.units);
     p.inventory.qualityTotal += stockQuality(s, b.productId) * b.units;
-    book(s, 'cogs', -unitCost * b.units, { cash: false, brandId: p.brandId });
+    book(s, 'cogs', -unitCost * b.units, { cash: false, brandId: p.brandId, productId: b.productId, channel: b.channel });
     const angry = Math.ceil(n * 0.3);
     p.reviews.count += angry;
     p.reviews.sum += angry;
@@ -122,9 +122,10 @@ function shipWholesale(s: GameState, id: number): void {
   p.inventory.qualityTotal -= q * w.qty;
   const revenue = round2(w.qty * w.unitPrice);
   const brandId = p.brandId;
-  book(s, 'revenue', revenue, { cash: false, brandId });
-  book(s, 'cogs', avg * w.qty, { cash: false, brandId });
-  book(s, 'fulfillment', w.qty * 0.6, { brandId });
+  book(s, 'revenue', revenue, { cash: false, brandId, productId: w.productId });
+  book(s, 'cogs', avg * w.qty, { cash: false, brandId, productId: w.productId });
+  book(s, 'fulfillment', w.qty * 0.6, { brandId, productId: w.productId });
+  countSource(s, 'wholesale', 1);
   s.receivables.push({ dueDay: s.day + 30, amount: revenue, label: `${w.account} invoice` });
   w.shipped = true;
   const late = s.day > w.dueDay;
@@ -150,7 +151,7 @@ function arrivals(s: GameState): void {
     const sup = SUPPLIERS[po.supplierId];
     if (po.status === 'production' && s.day >= po.productionDoneDay) {
       po.status = 'transit';
-      if (po.balanceDue > 0) {
+      if (po.balanceDue > 0 && !po.net30) {
         s.cash = round2(s.cash - po.balanceDue);
         notify(s, 'cash', `Paid ${sup.company} the 70% balance: −$${Math.round(po.balanceDue).toLocaleString()}.`);
         po.balanceDue = 0;
@@ -182,6 +183,10 @@ function arrivals(s: GameState): void {
       inv.costTotal = round2(inv.costTotal + po.totalCost);
       inv.qualityTotal += po.quality * po.qty;
       notify(s, 'po', `📦 ${po.qty.toLocaleString()} × ${def(s, po.productId).name} delivered!`, !po.auto);
+      if (po.net30 && po.balanceDue > 0) {
+        s.payables.push({ dueDay: s.day + 30, amount: po.balanceDue, label: `${sup.company} invoice (net 30)` });
+        po.balanceDue = 0;
+      }
     }
   }
   // Keep the PO list manageable.
@@ -241,12 +246,19 @@ function billsAndPayouts(s: GameState): void {
     notify(s, 'cash', `${r.label}: +$${Math.round(r.amount).toLocaleString()}.`);
   }
   s.receivables = s.receivables.filter((r) => r.dueDay > s.day);
+  for (const p of s.payables) {
+    if (p.dueDay !== s.day) continue;
+    s.cash = round2(s.cash - p.amount);
+    notify(s, 'cash', `Paid ${p.label}: −$${Math.round(p.amount).toLocaleString()}.`);
+  }
+  s.payables = s.payables.filter((p) => p.dueDay > s.day);
 }
 
 // ───────────────────────────── demand ─────────────────────────────
 
 interface Demand {
   channel: ChannelId;
+  source: OrderSource;
   orders: number;
   repeat?: boolean;
   discount?: number;
@@ -283,7 +295,8 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
       const impressions = Math.round((spent / f.cpm) * 1000);
       const clicks = poisson(s, impressions * f.ctr);
       const orders = hasStock ? poisson(s, clicks * f.cvr) : 0;
-      book(s, 'ads', spent, { brandId: brand.id });
+      book(s, 'ads', spent, { brandId: brand.id, productId: pid, channel: 'store' });
+      adStat(s, pid, 'scrollr', { spend: spent, impressions, clicks });
       rec.visits += clicks;
       rec.impressions += impressions;
       brand.awareness += impressions * 0.0004;
@@ -296,7 +309,7 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
       if (cell.history.length > 14) cell.history.shift();
       adOrders += orders;
     }
-    if (adOrders) out.push({ channel: 'store', orders: adOrders });
+    if (adOrders) out.push({ channel: 'store', source: 'scrollr', orders: adOrders });
 
     // Seekly search ads
     if (p.search.active) {
@@ -304,11 +317,12 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
       const clicks = Math.min(poisson(s, p.search.budget / f.cpc), Math.round(f.maxClicks));
       const spent = round2(clicks * f.cpc);
       const orders = hasStock ? poisson(s, clicks * f.cvr) : 0;
-      book(s, 'ads', spent, { brandId: brand.id });
+      book(s, 'ads', spent, { brandId: brand.id, productId: pid, channel: 'store' });
+      adStat(s, pid, 'seekly', { spend: spent, impressions: Math.round(clicks / 0.045), clicks });
       rec.visits += clicks;
       p.search.history.push({ day: s.day, spend: spent, clicks, orders });
       if (p.search.history.length > 14) p.search.history.shift();
-      if (orders) out.push({ channel: 'store', orders });
+      if (orders) out.push({ channel: 'store', source: 'seekly', orders });
     }
 
     // Organic store traffic: reviews, word of mouth and brand awareness
@@ -317,7 +331,7 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
     const visits = ((5 + 2 * Math.min(p.reviews.count, 80) * (averageRating(s, pid) >= 4 ? 1 : 0.6)) * trend * copycatMult(s, pid) + awareness) * intl;
     rec.visits += Math.round(visits);
     const organic = hasStock ? poisson(s, visits * siteCVR(s, pid, null) * 0.9) : 0;
-    if (organic) out.push({ channel: 'store', orders: organic });
+    if (organic) out.push({ channel: 'store', source: 'organic', orders: organic });
   }
 
   // Creator & viral spikes land on LoopShop if listed, otherwise on your store
@@ -327,9 +341,10 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
     const loop = p.listings.loopshop?.active && s.channels.loopshop?.joined;
     if (loop || live) {
       rec.visits += visits;
+      adStat(s, pid, 'creator', { impressions: visits * 12, clicks: visits });
       const cvr = siteCVR(s, pid, null) * (loop ? CHANNELS.loopshop.cvrMult : 1);
       const orders = hasStock ? poisson(s, visits * cvr) : 0;
-      if (orders) out.push({ channel: loop ? 'loopshop' : 'store', orders });
+      if (orders) out.push({ channel: loop ? 'loopshop' : 'store', source: 'creator', orders });
     }
   }
 
@@ -340,25 +355,30 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
     const c = CHANNELS[ch];
     const promo = l.promoUntil >= s.day;
     const bbd = ch === 'bazaarly' && isBigBazaarlyDays(s.day) && promo;
-    let visits = c.traffic * d.bars.demand * trend * Math.pow(l.rank, 1.4) * intl * copycatMult(s, pid) * (promo ? 2 : 1) * (bbd ? 2.5 : 1);
+    const visits = c.traffic * d.bars.demand * trend * Math.pow(l.rank, 1.4) * intl * copycatMult(s, pid) * (promo ? 2 : 1) * (bbd ? 2.5 : 1);
+    let sponsoredClicks = 0;
     if (l.sponsored > 0 && hasStock) {
       const cpc = (0.5 + 0.18 * d.bars.competition) * cpmSeason(s.day);
-      const clicks = Math.round(l.sponsored / cpc);
-      book(s, 'ads', round2(clicks * cpc), { brandId: brand.id });
-      visits += clicks;
+      sponsoredClicks = Math.round(l.sponsored / cpc);
+      const spent = round2(sponsoredClicks * cpc);
+      book(s, 'ads', spent, { brandId: brand.id, productId: pid, channel: ch });
+      adStat(s, pid, 'sponsored', { spend: spent, impressions: sponsoredClicks * 30, clicks: sponsoredClicks });
     }
-    rec.visits += Math.round(visits);
+    rec.visits += Math.round(visits + sponsoredClicks);
     const price = channelPrice(s, pid, ch);
     const premium = ch === 'crafthaus' ? 0.8 + stockQuality(s, pid) * 0.3 : 1;
     const cvr = d.baseCVR * c.cvrMult * priceFactor(s, pid, ch === 'flashcart' ? 2 : 1.4, price, ch) * reviewFactor(s, pid) * (l.program && c.program ? c.program.cvrBonus : 1) * premium * (d.exclusive ? 1.1 : 1);
-    const orders = hasStock ? poisson(s, visits * cvr) : 0;
+    const organicOrders = hasStock ? poisson(s, visits * cvr) : 0;
+    const sponsoredOrders = hasStock ? poisson(s, sponsoredClicks * cvr) : 0;
+    const orders = organicOrders + sponsoredOrders;
     l.recent.push(orders);
     if (l.recent.length > 7) l.recent.shift();
     // Ranking: sales velocity, rating and stock. Bazaarly punishes stock-outs hard.
     const velocity = l.recent.reduce((a, x) => a + x, 0) / Math.max(1, l.recent.length);
     const target = Math.min(1, 0.06 + velocity / (d.bars.demand * 35)) * (averageRating(s, pid) >= 4.3 || p.reviews.count < 5 ? 1 : 0.7) * (l.sponsored > 0 ? 1.15 : 1);
     l.rank = hasStock ? Math.max(0.02, Math.min(1, l.rank + (target - l.rank) * 0.08 + (promo ? 0.01 : 0))) : l.rank * (ch === 'bazaarly' ? 0.85 : 0.95);
-    if (orders) out.push({ channel: ch, orders });
+    if (organicOrders) out.push({ channel: ch, source: ch === 'loopshop' ? 'organic' : 'marketplace', orders: organicOrders });
+    if (sponsoredOrders) out.push({ channel: ch, source: 'sponsored', orders: sponsoredOrders });
   }
   return out;
 }
@@ -396,12 +416,12 @@ function brandRepeatDemand(s: GameState): Map<string, Demand[]> {
         let i = 0;
         while (r > weights[i] && i < weights.length - 1) r -= weights[i++];
         const list = out.get(pids[i]) ?? [];
-        list.push({ channel: 'store', orders: 1, repeat: true, ...extra });
+        list.push({ channel: 'store', source: 'repeat', orders: 1, repeat: true, ...extra });
         out.set(pids[i], list);
       }
     };
     allocate(Math.min(repeat, 5000), {});
-    allocate(Math.min(campaignOrders, 5000), { discount });
+    allocate(Math.min(campaignOrders, 5000), { discount, source: 'email' });
     if (repeat + campaignOrders > 0) milestone(s, 'first_repeat');
   }
   return out;
@@ -445,9 +465,14 @@ function sell(s: GameState, pid: string, demand: Demand[], rec: DailyRecord): { 
     inv.costTotal = inv.onHand ? round2(inv.costTotal - avg * units) : 0;
     inv.qualityTotal = inv.onHand ? inv.qualityTotal - q * units : 0;
     // Books: revenue and fees accrue to the channel's next payout; COGS leaves inventory.
-    book(s, 'revenue', revenue, { cash: false, brandId: brand.id });
-    book(s, 'fees', fees, { cash: false, brandId: brand.id });
-    book(s, 'cogs', avg * units, { cash: false, brandId: brand.id });
+    const tag = { cash: false, brandId: brand.id, productId: pid, channel: dem.channel };
+    book(s, 'revenue', revenue, tag);
+    book(s, 'fees', fees, tag);
+    book(s, 'cogs', avg * units, tag);
+    slice(s, pid, dem.channel, 'orders', orders);
+    slice(s, pid, dem.channel, 'units', units);
+    countSource(s, dem.source, orders);
+    if (dem.source === 'scrollr' || dem.source === 'seekly' || dem.source === 'creator' || dem.source === 'sponsored') adStat(s, pid, dem.source, { orders, revenue });
     s.channelAccrued[dem.channel] = round2((s.channelAccrued[dem.channel] ?? 0) + revenue - fees);
     rec.channelRevenue[dem.channel] = (rec.channelRevenue[dem.channel] ?? 0) + revenue;
     rec.orders += orders;
@@ -466,6 +491,7 @@ function sell(s: GameState, pid: string, demand: Demand[], rec: DailyRecord): { 
     if (!own) milestone(s, 'first_marketplace_sale');
     if (!s.milestones.first_sale) milestone(s, 'first_sale');
 
+    if (!program) rec.ownOrders = (rec.ownOrders ?? 0) + orders;
     if (program) {
       // Marketplace ships it for you.
       s.deliveries.push({ dueDay: s.day + 3, productId: pid, channel: dem.channel, orders, revenue, quality: stockQuality(s, pid) || q, delayDays: 0, damageRate: 0 });
@@ -568,7 +594,7 @@ export function advanceDay(s: GameState): void {
     const demand = productDemand(s, pid, rec);
     if (!s.flags.mom && pid === momPid) {
       s.flags.mom = true;
-      demand.unshift({ channel: 'store', orders: 1, customer: 'Mom', city: 'Hometown' });
+      demand.unshift({ channel: 'store', source: 'organic', orders: 1, customer: 'Mom', city: 'Hometown' });
     }
     demand.push(...(repeat.get(pid) ?? []));
     const hadStock = p.inventory.onHand > 0;
@@ -594,7 +620,8 @@ export function advanceDay(s: GameState): void {
   expireCards(s);
   updateMorale(s);
 
-  if (s.day % 7 === 0) marketerPass(s);
+  marketerPass(s);
+  if (s.day % 3 === 0) leadPass(s);
   runReorders(s);
   runLab(s);
   updateCredit(s);

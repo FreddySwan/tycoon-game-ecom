@@ -46,4 +46,4 @@ export const START_MONTH = 2; // March
 export const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const OVERHEAD_RATE: Record<number, number> = { 1: 0, 2: 0.01, 3: 0.025, 4: 0.04, 5: 0.06 };
 /** Payroll taxes and benefits on top of base wages. */
-export const BENEFITS = 1.2;
+export const BENEFITS = 1.15;

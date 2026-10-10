@@ -1,8 +1,8 @@
 import { CHANNELS, CREATORS, MARKETPLACES } from '../data';
 import { breakEvenCPA, creativeUnlocked, def, liveProducts, recentCPA, round2, stockQuality } from '../economics';
-import { chance } from '../rng';
-import type { ChannelId, GameState, Listing } from '../types';
-import { type ActionResult, milestone, nextId, notify, spendOn } from './core';
+import { chance, pick } from '../rng';
+import type { CategoryId, ChannelId, Creative, CreativeType, GameState, Listing } from '../types';
+import { type ActionResult, adStat, book, milestone, nextId, notify, spendOn } from './core';
 import { onStore } from './storefront';
 
 // ───────────────────────────── Scrollr ─────────────────────────────
@@ -36,6 +36,18 @@ export function setSearch(s: GameState, pid: string, patch: { active?: boolean; 
 
 // ───────────────────────────── creators ─────────────────────────────
 
+const HANDLES: Record<CategoryId, string[]> = {
+  pets: ['thatdogmom', 'pawsandplay', 'catsofmaple', 'goodboyreviews'],
+  home: ['cozyhomewithmia', 'smallspace.big.style', 'plantdad.nyc', 'nestnotes'],
+  desk: ['deskgoals', 'setupwars', 'remote.ronan', 'minimal.desk'],
+  kitchen: ['brewnerd', 'twentyminutemeals', 'kitchen.hacks.kat', 'pourover.pete'],
+  fitness: ['fitwithfinn', 'livingroomlifts', 'yogawithana', 'tenminutestrong'],
+};
+
+export function creatorHandle(s: GameState, cat: CategoryId): string {
+  return '@' + pick(s, HANDLES[cat]);
+}
+
 export function hireCreator(s: GameState, pid: string, tierId: string): ActionResult {
   if (s.stage < 2) return 'Creators unlock in the Growing Brand stage.';
   const tier = CREATORS.find((c) => c.id === tierId);
@@ -43,11 +55,14 @@ export function hireCreator(s: GameState, pid: string, tierId: string): ActionRe
   const p = s.products[pid];
   if (!p.inventory.onHand) return 'Have stock before a creator sends people your way.';
   if (p.creatorBoost.length) return 'A creator campaign is already running for this product.';
-  const err = spendOn(s, 'ads', tier.cost, p.brandId);
-  if (err) return err;
+  if (s.cash < tier.cost) return `Not enough cash. You need $${tier.cost.toLocaleString()}.`;
+  book(s, 'ads', tier.cost, { brandId: p.brandId, productId: pid, channel: p.listings.loopshop?.active ? 'loopshop' : 'store' });
+  adStat(s, pid, 'creator', { spend: tier.cost });
+  s.creatorPosts.push({ day: s.day, productId: pid, tier: tier.id, cost: tier.cost, viral: false, handle: creatorHandle(s, def(s, pid).category) });
   const viral = chance(s, tier.viral);
   const k = viral ? 5 : 1;
   p.creatorBoost = [0.5, 1, 0.6, 0.3, 0.15].map((x) => Math.round(tier.reach * x * k));
+  s.creatorPosts[s.creatorPosts.length - 1].viral = viral;
   p.ugc = true;
   milestone(s, 'first_creator');
   notify(s, 'info', viral ? `🔥 The ${tier.name.toLowerCase()} video about ${def(s, pid).name} is going viral! Watch your stock.` : `🎬 A ${tier.name.toLowerCase()} posted about ${def(s, pid).name}. Creator UGC ads unlocked for it.`, viral);
@@ -140,49 +155,109 @@ export function sendCampaign(s: GameState, brandId: number, discountPct: number)
 
 // ───────────────────────────── automation ─────────────────────────────
 
-/** The growth marketer's weekly pass over every ad: pause losers, scale winners, switch tests on. */
+export function setCreative(s: GameState, pid: string, type: CreativeType, patch: Partial<Creative>): ActionResult {
+  const p = s.products[pid];
+  if (!p) return 'Unknown product.';
+  Object.assign(p.creatives[type], patch);
+  // A new creative restarts learning: fatigue resets.
+  for (const c of Object.values(p.ads)) if (c.creative === type) c.daysActive = 0;
+  return null;
+}
+
+export function setAdPolicy(s: GameState, patch: Partial<GameState['adPolicy']>): ActionResult {
+  Object.assign(s.adPolicy, patch);
+  s.adPolicy.maxSharePct = Math.max(1, Math.min(60, Math.round(s.adPolicy.maxSharePct)));
+  s.adPolicy.floor = Math.max(0, Math.round(s.adPolicy.floor));
+  s.adPolicy.marginPct = Math.max(0, Math.min(80, Math.round(s.adPolicy.marginPct)));
+  return null;
+}
+
+/** Daily ad budget the marketer may spend: a share of recent revenue, never below the floor. */
+export function adCap(s: GameState): number {
+  const revenue = s.history.slice(-30).reduce((a, r) => a + r.pl.revenue, 0) / Math.max(1, Math.min(30, s.history.length));
+  return Math.max(s.adPolicy.floor, (s.adPolicy.maxSharePct / 100) * revenue);
+}
+
+/**
+ * The growth marketer's daily pass. Profitable ads get more budget every day until they stop
+ * beating break-even; ads that cost more than an order earns get paused. Total spend is held
+ * under the cap you set (a % of revenue).
+ */
 export function marketerPass(s: GameState): void {
   if (!s.team.marketer.count) return;
   let paused = 0;
   let scaled = 0;
+  let launched = 0;
+  type Knob = { get: () => number; set: (v: number) => void; cpa: number | null };
+  const knobs: Knob[] = [];
   for (const pid of liveProducts(s)) {
     const p = s.products[pid];
     if (!onStore(s, pid) || !p.inventory.onHand) continue;
     const be = breakEvenCPA(s, pid);
+    // Scale only ads that leave a real margin after their cost; pause anything above break-even.
+    const target = be * (1 - s.adPolicy.marginPct / 100);
+    const judge = (h: { history: { spend: number; orders: number }[] }) => {
+      const r = recentCPA(h, 5);
+      return { r, enough: r.orders >= 3 || r.spend >= be * 2 };
+    };
     let anyActive = false;
     for (const c of Object.values(p.ads)) {
       if (!c.active) continue;
-      const r = recentCPA(c, 7);
-      const enough = r.orders >= 4 || r.spend >= be * 2.5;
-      if (!enough) {
-        anyActive = true;
-        continue;
-      }
-      if (r.cpa === null || r.cpa > be * 0.95) {
+      const { r, enough } = judge(c);
+      if (enough && (r.cpa === null || r.cpa > be)) {
         c.active = false;
         paused++;
-      } else {
-        anyActive = true;
-        if (r.cpa < be * 0.7) {
-          c.budget = Math.min(2500, Math.round(c.budget * 1.25));
-          scaled++;
-        }
+        continue;
       }
+      anyActive = true;
+      if (enough && r.cpa !== null && r.cpa < target) {
+        c.budget = Math.min(5000, Math.round(c.budget * 1.2 + 2));
+        scaled++;
+      }
+      knobs.push({ get: () => c.budget, set: (v) => (c.budget = v), cpa: r.cpa });
     }
     if (!anyActive) {
       const untested = Object.values(p.ads).filter((c) => !c.totals.spend && creativeUnlocked(s, pid, c.creative));
       for (const c of untested.slice(0, 2)) {
         c.active = true;
         c.budget = 20;
+        launched++;
+        knobs.push({ get: () => c.budget, set: (v) => (c.budget = v), cpa: null });
       }
     }
-    if (p.search.active) {
-      const r = recentCPA(p.search, 7);
-      if (r.orders >= 4 && r.cpa !== null) p.search.budget = r.cpa < be * 0.7 ? Math.min(3000, Math.round(p.search.budget * 1.2)) : r.cpa > be ? Math.max(5, Math.round(p.search.budget * 0.7)) : p.search.budget;
-    } else if (searchUnlocked(s)) {
-      p.search.active = true;
-      p.search.budget = 20;
+    if (searchUnlocked(s)) {
+      if (!p.search.active && !p.search.history.length) {
+        p.search.active = true;
+        p.search.budget = 20;
+        launched++;
+      } else if (p.search.active) {
+        const { r, enough } = judge(p.search);
+        if (enough && (r.cpa === null || r.cpa > be)) {
+          p.search.active = false;
+          paused++;
+        } else if (enough && r.cpa !== null && r.cpa < target) {
+          p.search.budget = Math.min(5000, Math.round(p.search.budget * 1.2 + 2));
+          scaled++;
+        }
+      }
+      if (p.search.active) knobs.push({ get: () => p.search.budget, set: (v) => (p.search.budget = v), cpa: recentCPA(p.search, 5).cpa });
     }
   }
-  if (paused || scaled) notify(s, 'team', `📈 ${s.people.find((x) => x.role === 'marketer')?.name ?? 'Your marketer'}: paused ${paused} losing ads, scaled ${scaled} winners.`);
+  // Keep total spend under the cap, trimming the least efficient budgets first.
+  const cap = adCap(s);
+  let total = knobs.reduce((a, k) => a + k.get(), 0);
+  if (total > cap) {
+    const worstFirst = [...knobs].sort((a, b) => (b.cpa ?? 1e9) - (a.cpa ?? 1e9));
+    for (const k of worstFirst) {
+      if (total <= cap) break;
+      const cut = Math.min(k.get() - 5, total - cap);
+      if (cut > 0) {
+        k.set(Math.round(k.get() - cut));
+        total -= cut;
+      }
+    }
+  }
+  if (s.day % 7 === 0 && (paused || scaled || launched)) {
+    notify(s, 'team', `📈 ${s.people.find((x) => x.role === 'marketer')?.name ?? 'Your marketer'} this week: scaled ${scaled} winners, paused ${paused} losers, launched ${launched} tests. Spend cap $${Math.round(cap).toLocaleString()}/day.`);
+  }
 }

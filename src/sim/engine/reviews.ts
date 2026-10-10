@@ -2,7 +2,7 @@ import { DAMAGE_RATE, REVIEW_TEXT } from '../data';
 import { brandOf, returnRate, supportCapacity } from '../economics';
 import { binomial, chance, normal, pick } from '../rng';
 import type { CardKind, Delivery, GameState } from '../types';
-import { milestone, nextId, notify, randomCustomer } from './core';
+import { book, milestone, nextId, notify, randomCustomer } from './core';
 
 const AVATAR: Record<CardKind, string> = { damaged: '😕', defect: '🤨', late: '⏰' };
 const MESSAGE: Record<CardKind, string> = {
@@ -52,8 +52,7 @@ function queueTickets(s: GameState, kind: CardKind, count: number, revenueEach: 
     for (let i = 0; i < count; i++) {
       if (s.cards.length >= 6) {
         // Overflow: nobody answers, the customer files a chargeback.
-        s.history[s.history.length - 1].pl.refunds += revenueEach;
-        s.cash -= revenueEach;
+        book(s, 'refunds', revenueEach, { productId: pid, channel: d.channel });
         addReview(s, pid, 1, randomCustomer(s).name, 'Nobody answered my message. Had to file a chargeback.');
         continue;
       }
@@ -106,10 +105,7 @@ export function processDeliveries(s: GameState): void {
     const ok = n - damaged - defect - late;
     const returned = binomial(s, ok, returnRate(s, d.productId));
     p.returns += returned;
-    if (returned) {
-      s.history[s.history.length - 1].pl.refunds += returned * each * 0.85;
-      s.cash -= returned * each * 0.85;
-    }
+    if (returned) book(s, 'refunds', returned * each * 0.85, { productId: d.productId, channel: d.channel });
     queueTickets(s, 'damaged', damaged, each, d.productId, d);
     queueTickets(s, 'defect', defect, each, d.productId, d);
     queueTickets(s, 'late', late, each, d.productId, d);
@@ -136,8 +132,7 @@ export function processTickets(s: GameState): void {
     const each = t.revenue / t.count;
     const refund = t.kind !== 'late' && each <= s.support.autoRefundUnder;
     const cost = t.kind === 'late' ? each * 0.15 * n : refund ? each * n : each * 0.45 * n;
-    s.history[s.history.length - 1].pl.refunds += cost;
-    s.cash -= cost;
+    book(s, 'refunds', cost, { productId: t.productId });
     t.count -= n;
     t.revenue -= each * n;
     s.tickets.handled += n;
@@ -147,8 +142,7 @@ export function processTickets(s: GameState): void {
     if (t.count > 0 && s.day - t.day >= 3) {
       s.tickets.dropped += t.count;
       const dropped = t.count;
-      s.history[s.history.length - 1].pl.refunds += t.revenue;
-      s.cash -= t.revenue;
+      book(s, 'refunds', t.revenue, { productId: t.productId });
       const pid = t.productId;
       const angry = Math.ceil(t.count * 0.5);
       for (let i = 0; i < Math.min(angry, 3); i++) addReview(s, pid, 1, randomCustomer(s).name, 'Nobody ever answered my email.');
@@ -178,8 +172,7 @@ export function expireCards(s: GameState): void {
     s.cards = s.cards.filter((c) => c.id !== card.id);
     if (card.kind === 'late') addReview(s, card.productId, 2, card.customer, 'Slow shipping and no reply to my message.');
     else {
-      s.history[s.history.length - 1].pl.refunds += card.revenue;
-      s.cash -= card.revenue;
+      book(s, 'refunds', card.revenue, { productId: card.productId });
       addReview(s, card.productId, 1, card.customer, 'Arrived broken and nobody answered me. Had to file a chargeback.');
     }
     notify(s, 'card', `${card.customer} gave up waiting for a reply.`);

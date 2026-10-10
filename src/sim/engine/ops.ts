@@ -1,8 +1,8 @@
-import { BATCH_UNLOCK_AFTER, FRIEND_HELP, HOURS, PACKAGING_COST, ROLES, SPACES, THANK_YOU_COST, THIRD_PARTY, TILE_COST } from '../data';
-import { brandOf, def, intlExtraCost, landedUnitCost, round2, seatsUsed, stockQuality } from '../economics';
+import { BATCH_UNLOCK_AFTER, FRIEND_HELP, HOURS, PACKAGING_COST, PACKER_RATE, ROLES, SPACES, THANK_YOU_COST, THIRD_PARTY, TILE_COST } from '../data';
+import { brandOf, def, intlExtraCost, landedUnitCost, round2, seatsUsed, stockQuality, storageCapacity, storageUsed } from '../economics';
 import { chance } from '../rng';
 import type { BacklogBucket, CardChoice, CustomerCard, GameState, RoleId, TileId } from '../types';
-import { type ActionResult, book, milestone, notify, spendOn, useHours } from './core';
+import { type ActionResult, book, milestone, notify, slice, spendOn, useHours } from './core';
 import { addReview } from './reviews';
 
 // ───────────────────────────── shipping ─────────────────────────────
@@ -16,8 +16,10 @@ export function shipFromBucket(s: GameState, b: BacklogBucket, n: number): void 
   const units = b.units * share;
   const intl = b.intl * share;
   const perOrder = d.shipToCustomer * (units / n > 1.5 ? 1.25 : 1) + PACKAGING_COST[brand.packaging] + (brand.thankYouCard ? THANK_YOU_COST : 0);
-  const cost = n * perOrder + (s.thirdParty ? n * THIRD_PARTY.perOrder : 0) + intl * intlExtraCost(s, b.productId);
-  book(s, 'fulfillment', cost, { brandId: brand.id });
+  const tpl = s.thirdParty ? n * THIRD_PARTY.perOrder : 0;
+  const cost = n * perOrder + tpl + intl * intlExtraCost(s, b.productId);
+  book(s, 'fulfillment', cost, { brandId: brand.id, productId: b.productId, channel: b.channel });
+  if (tpl) slice(s, b.productId, b.channel, 'thirdParty', tpl);
   s.shipped += n;
   s.deliveries.push({
     dueDay: s.day + 4 + (intl > 0 ? 2 : 0),
@@ -222,8 +224,8 @@ export function cardChoices(kind: CustomerCard['kind']): CardChoice[] {
   ];
 }
 
-export function refund(s: GameState, amount: number, brandId?: number): void {
-  book(s, 'refunds', amount, { brandId });
+export function refund(s: GameState, amount: number, brandId?: number, productId?: string): void {
+  book(s, 'refunds', amount, { brandId, productId });
 }
 
 export function resolveCard(s: GameState, cardId: number, choiceId: string): ActionResult {
@@ -237,11 +239,11 @@ export function resolveCard(s: GameState, cardId: number, choiceId: string): Act
   const unit = landedUnitCost(s, pid) + def(s, pid).shipToCustomer + PACKAGING_COST[brandOf(s, pid).packaging];
   switch (choiceId) {
     case 'refund':
-      refund(s, card.revenue, brandId);
+      refund(s, card.revenue, brandId, pid);
       if (chance(s, 0.3)) addReview(s, pid, 4, card.customer, 'Product had an issue but they refunded me right away.');
       break;
     case 'replace': {
-      book(s, 'fulfillment', unit, { brandId });
+      book(s, 'fulfillment', unit, { brandId, productId: pid });
       const inv = s.products[pid].inventory;
       if (inv.onHand > 0) {
         const avg = inv.costTotal / inv.onHand;
@@ -255,14 +257,14 @@ export function resolveCard(s: GameState, cardId: number, choiceId: string): Act
     }
     case 'photo':
       if (chance(s, 0.25)) addReview(s, pid, 1, card.customer, 'They wanted PROOF before helping. Unbelievable.');
-      else refund(s, card.revenue * 0.5, brandId);
+      else refund(s, card.revenue * 0.5, brandId, pid);
       break;
     case 'partial':
-      refund(s, card.revenue * 0.5, brandId);
+      refund(s, card.revenue * 0.5, brandId, pid);
       if (chance(s, 0.25)) addReview(s, pid, 3, card.customer);
       break;
     case 'code':
-      refund(s, card.revenue * 0.15, brandId);
+      refund(s, card.revenue * 0.15, brandId, pid);
       if (chance(s, 0.3)) addReview(s, pid, 4, card.customer, 'Slow shipping but the owner was lovely about it.');
       break;
     case 'template':
@@ -270,4 +272,73 @@ export function resolveCard(s: GameState, cardId: number, choiceId: string): Act
       break;
   }
   return null;
+}
+
+// ───────────────────────────── warehouse lead autopilot ─────────────────────────────
+
+export function setAutopilot(s: GameState, patch: Partial<GameState['autopilot']>): ActionResult {
+  if ((patch.staffing || patch.buildout) && !s.team.lead.count) return 'Hire or promote a warehouse lead first. They run the floor.';
+  Object.assign(s.autopilot, patch);
+  return null;
+}
+
+/** Packers needed to cover recent own-shipped demand with a 25% buffer. */
+export function packersNeeded(s: GameState): number {
+  const recent = s.history.slice(-14);
+  const pace = recent.length ? recent.reduce((a, r) => a + (r.ownOrders ?? r.orders), 0) / recent.length : 0;
+  const robots = s.layout.cells.filter((c) => c === 'robot').length * 110;
+  return Math.max(0, Math.ceil((pace * 1.25 - robots) / (PACKER_RATE * 1.1)));
+}
+
+function freeCells(s: GameState): number[] {
+  const out: number[] = [];
+  s.layout.cells.forEach((c, i) => !c && i !== dockIndex(s) && out.push(i));
+  return out;
+}
+
+/** The warehouse lead keeps the floor sized to demand: hires and lets go, adds stations and racks, runs shifts. */
+export function leadPass(s: GameState): void {
+  if (!s.team.lead.count || s.thirdParty) return;
+  const ap = s.autopilot;
+  if (!ap.staffing && !ap.buildout) return;
+  const lead = s.people.find((p) => p.role === 'lead')?.name ?? 'Your lead';
+  const notes: string[] = [];
+  const need = packersNeeded(s);
+  const stations = s.layout.cells.filter((c) => c === 'station').length;
+  const { w, h } = s.layout;
+  if (ap.buildout && w) {
+    const want = Math.ceil(need / (s.shifts === 2 ? 2 : 1)) - stations;
+    let added = 0;
+    for (let k = 0; k < Math.min(want, 4); k++) {
+      const free = freeCells(s).filter((i) => Math.floor(i / w) >= Math.floor(h / 2));
+      const best = free.sort((a, b) => Math.abs((a % w) - w / 2) + Math.abs(Math.floor(a / w) - h) - (Math.abs((b % w) - w / 2) + Math.abs(Math.floor(b / w) - h)))[0];
+      if (best === undefined || s.cash < TILE_COST.station + 5000) break;
+      if (!placeTile(s, best % w, Math.floor(best / w), 'station')) added++;
+    }
+    if (added) notes.push(`built ${added} packing station${added > 1 ? 's' : ''}`);
+    if (storageUsed(s) > storageCapacity(s) * 0.85) {
+      const free = freeCells(s).filter((i) => Math.floor(i / w) < Math.floor(h / 2));
+      const spot = free[0];
+      if (spot !== undefined && s.cash > TILE_COST.rack + 5000 && !placeTile(s, spot % w, Math.floor(spot / w), 'rack')) notes.push('added a storage rack');
+    }
+  }
+  if (ap.staffing) {
+    const slots = s.layout.cells.filter((c) => c === 'station').length * (s.shifts === 2 ? 2 : 1);
+    if (need > slots && s.shifts === 1 && slots > 0) {
+      s.shifts = 2;
+      notes.push('started a second shift');
+    }
+    const maxUseful = s.layout.cells.filter((c) => c === 'station').length * s.shifts;
+    const target = Math.min(need, maxUseful);
+    const have = s.team.packer.count;
+    if (target > have) {
+      const n = target - have;
+      if (!hire(s, 'packer', n)) notes.push(`hired ${n} packer${n > 1 ? 's' : ''}`);
+    } else if (have > Math.max(1, Math.ceil(need * 1.4))) {
+      const n = have - Math.max(1, Math.ceil(need * 1.15));
+      if (n > 0 && !fire(s, 'packer', n)) notes.push(`let ${n} packer${n > 1 ? 's' : ''} go`);
+    }
+    if (s.team.lead.count * 15 < s.team.packer.count && !hire(s, 'lead')) notes.push('promoted a shift lead');
+  }
+  if (notes.length) notify(s, 'team', `🦺 ${lead}: ${notes.join(', ')}.`);
 }

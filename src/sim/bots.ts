@@ -10,6 +10,7 @@ import {
   listPrice,
   liveProducts,
   recentCPA,
+  steadyDailyUnits,
   storageCapacity,
   storageUsed,
   supportCapacity,
@@ -92,7 +93,7 @@ function supply(s: GameState, pid: string) {
     if (s.cash > 1600) order(s, pid, 300, 'air');
     return;
   }
-  const daily = Math.max(avgDailyOrders(s, pid, 7), 1) * unitsPerOrder(s, pid);
+  const daily = Math.max(steadyDailyUnits(s, pid), 1);
   const cover = (p.inventory.onHand + incomingUnits(s, pid)) / daily;
   const sup = bestSupplier(s, daily * 60);
   const seaLead = SUPPLIERS[sup].productionDays + 25;
@@ -172,8 +173,12 @@ function staff(s: GameState) {
   if (s.stage >= 4 && !s.team.designer.count) E.hire(s, 'designer');
 }
 
+function stretched(s: GameState): boolean {
+  return s.credit.unlocked && s.credit.balance > s.credit.limit * 0.6;
+}
+
 function layout(s: GameState) {
-  if (!s.layout.w || s.cash < 8000) return;
+  if (!s.layout.w || s.cash < 8000 || stretched(s)) return;
   const { w, h } = s.layout;
   const stations = s.layout.cells.filter((c) => c === 'station').length;
   const wantStations = Math.ceil(s.team.packer.count / s.shifts) + 1;
@@ -202,6 +207,10 @@ function layout(s: GameState) {
 }
 
 function growth(s: GameState) {
+  if (stretched(s)) {
+    if (s.cash > 15000) E.repayCredit(s, Math.min(s.credit.balance, s.cash - 10000));
+    return;
+  }
   // More products
   const slots = E.productSlots(s);
   const t = trailing(s, 30);

@@ -3,7 +3,8 @@ import { CREATORS, ROLES, SUPPLIERS, SUPPLIER_ORDER, WHOLESALE_ACCOUNTS } from '
 import { activeContract, avgDailyOrders, def, effectivePrice, freightPerUnit, liveProducts, listPrice, round2, trailing } from '../economics';
 import { chance, pick, randInt } from '../rng';
 import type { CardChoice, GameEvent, GameState, RoleId, SupplierId } from '../types';
-import { type ActionResult, milestone, nextId, notify, spendCash, spendOn } from './core';
+import { type ActionResult, adStat, book, milestone, nextId, notify, spendCash } from './core';
+import { creatorHandle } from './marketing';
 import { giveRaise } from './ops';
 import { resolveCashCrisis } from './company';
 import { createPO, signContract } from './sourcing';
@@ -224,14 +225,15 @@ export function rollEvents(s: GameState): void {
   if (s.stage >= 2 && live.length && cooled(s, 'creatorDM', 45) && chance(s, 0.02)) {
     const pid = pick(s, live);
     cool(s, 'creatorDM');
+    const handle = creatorHandle(s, def(s, pid).category);
     pushEvent(s, {
       kind: 'creator-dm',
       title: 'A creator slid into your DMs',
-      body: `@${pick(s, ['cozyhomewithmia', 'gearguy', 'thatdogmom', 'deskgoals', 'fitwithfinn'])} loves ${def(s, pid).name} and offers a post for $800 (normally $1,500).`,
+      body: `${handle} loves ${def(s, pid).name} and offers a post for $800 (normally $1,500).`,
       blocking: false,
       expiresDay: s.day + 4,
       choices: [c('accept', 'Book it ($800)', 'Mid-size creator, discounted'), c('decline', 'Pass', 'Not now')],
-      data: { pid },
+      data: { pid, handle },
     });
   }
 
@@ -312,8 +314,8 @@ export function resolveEvent(s: GameState, eventId: number, choiceId: string): A
         s.products[pid].price = round2(s.products[pid].price * 0.85);
         s.products[pid].copycat = 0.08;
       } else if (choiceId === 'brand') {
-        const err = spendOn(s, 'ads', 2000 * s.stage, s.products[pid].brandId);
-        if (err) return err;
+        if (s.cash < 2000 * s.stage) return `Not enough cash. You need $${(2000 * s.stage).toLocaleString()}.`;
+        book(s, 'ads', 2000 * s.stage, { brandId: s.products[pid].brandId, productId: pid });
         s.products[pid].copycat = 0.07;
       }
       break;
@@ -379,12 +381,14 @@ export function resolveEvent(s: GameState, eventId: number, choiceId: string): A
       break;
     case 'creator-dm':
       if (choiceId === 'accept' && pid && s.products[pid]) {
-        const err = spendOn(s, 'ads', 800, s.products[pid].brandId);
-        if (err) return err;
+        if (s.cash < 800) return 'Not enough cash. You need $800.';
+        book(s, 'ads', 800, { brandId: s.products[pid].brandId, productId: pid, channel: 'store' });
+        adStat(s, pid, 'creator', { spend: 800 });
         const tier = CREATORS[1];
         const viral = chance(s, tier.viral);
         s.products[pid].creatorBoost = [0.5, 1, 0.6, 0.3, 0.15].map((x) => Math.round(tier.reach * x * (viral ? 5 : 1)));
         s.products[pid].ugc = true;
+        s.creatorPosts.push({ day: s.day, productId: pid, tier: 'mid', cost: 800, viral, handle: String(d.handle ?? '@creator') });
         milestone(s, 'first_creator');
         if (viral) notify(s, 'info', `🔥 The post blew up! ${def(s, pid).name} is everywhere.`, true);
       }

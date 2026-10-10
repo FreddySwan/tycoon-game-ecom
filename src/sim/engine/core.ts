@@ -1,7 +1,8 @@
 import { BRAND_COLORS, CATALOG, CITIES, FIRST_NAMES, FOUNDER_HOURS, LAST_INITIALS, MODULE_IDS, STARTING_CASH } from '../data';
 import { def, emptyPL, hoursLeft, round2 } from '../economics';
 import { pick } from '../rng';
-import type { Brand, DailyRecord, GameState, MilestoneId, ModuleId, NoticeKind, PLCategory, ProductState, RoleId } from '../types';
+import { hooksFor } from '../data';
+import type { AdDay, AdSource, Brand, ChannelId, Creative, CreativeType, DailyRecord, GameState, MilestoneId, ModuleId, NoticeKind, OrderSource, PLCategory, ProductDef, ProductState, RoleId, Slice } from '../types';
 
 export type ActionResult = string | null;
 
@@ -81,6 +82,17 @@ export function newBrand(id: number, name: string, day: number): Brand {
   };
 }
 
+export function defaultCreatives(d: ProductDef): Record<CreativeType, Creative> {
+  const hooks = hooksFor(d);
+  const benefit = hooks.find((h) => h.type === 'benefit')?.id ?? 'problem';
+  return {
+    white: { photo: 0, hook: benefit, cta: 'shop' },
+    video: { photo: 0, hook: 'problem', cta: 'shop' },
+    review: { photo: 0, hook: 'social', cta: 'shop' },
+    ugc: { photo: 0, hook: 'emotional', cta: 'get' },
+  };
+}
+
 export function newProduct(s: GameState, pid: string, brandId: number): ProductState {
   const d = def(s, pid);
   const p: ProductState = {
@@ -101,6 +113,7 @@ export function newProduct(s: GameState, pid: string, brandId: number): ProductS
     listings: {},
     reorder: { enabled: false, coverDays: 30, qty: 500, freight: 'sea', supplierId: null },
     ugc: false,
+    creatives: defaultCreatives(d),
     copycat: 0,
     reviews: { count: 0, sum: 0, hist: [0, 0, 0, 0, 0] },
     sold: 0,
@@ -154,6 +167,7 @@ export function createGame(seed = Date.now()): GameState {
     eventCooldowns: {},
     bills: [{ id: 1, dueDay: 30, label: 'Rent', amount: 900, everyDays: 30, category: 'rent' }],
     receivables: [],
+    payables: [],
     history: [],
     reports: [],
     milestones: {},
@@ -171,6 +185,11 @@ export function createGame(seed = Date.now()): GameState {
     regions: {},
     wholesale: [],
     lab: [],
+    adPolicy: { maxSharePct: 20, floor: 100, marginPct: 25 },
+    autopilot: { staffing: false, buildout: false },
+    research: {},
+    creatorPosts: [],
+    shortlist: [],
     ambition: null,
     ambitionsDone: [],
     stageOffer: null,
@@ -220,7 +239,36 @@ export function newRecord(day: number): DailyRecord {
     productOrders: {},
     brandRevenue: {},
     brandCost: {},
+    productPL: {},
+    channelPL: {},
+    adStats: {},
+    sources: {},
   };
+}
+
+export function emptySlice(): Slice {
+  return { orders: 0, units: 0, revenue: 0, refunds: 0, cogs: 0, fees: 0, fulfillment: 0, thirdParty: 0, ads: 0 };
+}
+
+const SLICE_KEYS: Partial<Record<PLCategory, keyof Slice>> = { revenue: 'revenue', refunds: 'refunds', cogs: 'cogs', fees: 'fees', fulfillment: 'fulfillment', ads: 'ads' };
+
+/** Add to today's per-product / per-channel slices. */
+export function slice(s: GameState, pid: string | undefined, ch: ChannelId | undefined, key: keyof Slice, amount: number): void {
+  const r = today(s);
+  if (pid) (r.productPL[pid] ??= emptySlice())[key] += amount;
+  if (ch) (r.channelPL[ch] ??= emptySlice())[key] += amount;
+}
+
+/** Record ad results for one product and source on today's row. */
+export function adStat(s: GameState, pid: string, src: AdSource, patch: Partial<AdDay>): void {
+  const r = today(s);
+  const row = ((r.adStats[pid] ??= {})[src] ??= { spend: 0, impressions: 0, clicks: 0, orders: 0, revenue: 0 });
+  for (const [k, v] of Object.entries(patch)) row[k as keyof AdDay] += v ?? 0;
+}
+
+export function countSource(s: GameState, src: OrderSource, orders: number): void {
+  const r = today(s);
+  r.sources[src] = (r.sources[src] ?? 0) + orders;
 }
 
 /** Today's ledger row. Actions taken during a day book into it so the P&L sees every dollar. */
@@ -234,9 +282,11 @@ export function today(s: GameState): DailyRecord {
 }
 
 /** Record an expense or income in the P&L for today and move the cash. */
-export function book(s: GameState, cat: PLCategory, amount: number, opts: { cash?: boolean; brandId?: number } = {}): void {
+export function book(s: GameState, cat: PLCategory, amount: number, opts: { cash?: boolean; brandId?: number; productId?: string; channel?: ChannelId } = {}): void {
   const r = today(s);
   r.pl[cat] += amount;
+  const key = SLICE_KEYS[cat];
+  if (key && (opts.productId || opts.channel)) slice(s, opts.productId, opts.channel, key, amount);
   if (opts.brandId !== undefined) {
     if (cat === 'revenue') r.brandRevenue[opts.brandId] = (r.brandRevenue[opts.brandId] ?? 0) + amount;
     else r.brandCost[opts.brandId] = (r.brandCost[opts.brandId] ?? 0) + amount;
@@ -268,4 +318,24 @@ export function setFlag(s: GameState, key: string): void {
 
 export function founderHours(): number {
   return FOUNDER_HOURS;
+}
+
+/** Bring older saves up to the current shape. */
+export function migrate(s: GameState): GameState {
+  s.adPolicy ??= { maxSharePct: 20, floor: 100, marginPct: 25 };
+  s.adPolicy.marginPct ??= 25;
+  s.autopilot ??= { staffing: false, buildout: false };
+  s.research ??= {};
+  s.shortlist ??= [];
+  s.creatorPosts ??= [];
+  s.payables ??= [];
+  for (const id of Object.keys(s.products)) s.products[id].creatives ??= defaultCreatives(def(s, id));
+  for (const r of s.history) {
+    r.productPL ??= {};
+    r.channelPL ??= {};
+    r.adStats ??= {};
+    r.sources ??= {};
+  }
+  s.rev = 1;
+  return s;
 }

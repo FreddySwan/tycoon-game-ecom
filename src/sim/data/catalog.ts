@@ -63,6 +63,7 @@ const b = (id: string, text: string, cvr: number, returns = 0): BenefitDef => ({
 export const CATALOG: Record<string, ProductDef> = {
   dogbowl: {
     id: 'dogbowl',
+    insights: ['Rival bowls get 1★ reviews for “slides across the floor”. Non-slip matters.', 'New puppy owners buy far more gear in month one: a warm, cheap audience.', 'Price sweet spot looks like $25–32.'],
     name: 'Slow-Feeder Dog Bowl',
     emoji: '🥣',
     category: 'pets',
@@ -102,6 +103,7 @@ export const CATALOG: Record<string, ProductDef> = {
   },
   glowplanter: {
     id: 'glowplanter',
+    insights: ['Search interest is spiking right now… and fads fade fast.', 'Top complaint on cheap pots: “glow lasts 20 minutes”. Quality matters.', 'Gift shoppers love it; plant people care about drainage.'],
     name: 'Glow Planters',
     emoji: '🪴',
     category: 'home',
@@ -140,6 +142,7 @@ export const CATALOG: Record<string, ProductDef> = {
   },
   laptopstand: {
     id: 'laptopstand',
+    insights: ['400+ near-identical listings. Expect pricey ads.', 'Remote workers pay for sturdy builds; students hunt bargains.', 'Heavier to ship: watch your margin.'],
     name: 'Aluminum Laptop Stand',
     emoji: '💻',
     category: 'desk',
@@ -178,6 +181,7 @@ export const CATALOG: Record<string, ProductDef> = {
   },
   catfountain: {
     id: 'catfountain',
+    insights: ['Owners rebuy filters every month: great for repeat customers.', 'Top complaint on rivals: noisy pumps. “Quiet” sells.', 'Higher price means slower decisions, so trust matters.'],
     name: 'Cat Water Fountain',
     emoji: '⛲',
     category: 'pets',
@@ -194,7 +198,7 @@ export const CATALOG: Record<string, ProductDef> = {
     repeatability: 1.5,
     trend: { kind: 'evergreen' },
     unlockStage: 1,
-    appearsDay: 30,
+    appearsDay: 0,
     videoHook: '“Cat discovers the fountain” video',
     searchVolume: 300,
     benefits: [
@@ -210,6 +214,7 @@ export const CATALOG: Record<string, ProductDef> = {
   },
   siliconelids: {
     id: 'siliconelids',
+    insights: ['Tiny and light: cheap to ship and store.', '6-packs and bundles convert well.', 'Complaint on rivals: “tore after two weeks”.'],
     name: 'Stretch Silicone Lids',
     emoji: '🫙',
     category: 'kitchen',
@@ -225,7 +230,7 @@ export const CATALOG: Record<string, ProductDef> = {
     size: 0.5,
     repeatability: 1.3,
     trend: { kind: 'evergreen' },
-    unlockStage: 2,
+    unlockStage: 1,
     appearsDay: 0,
     videoHook: '“Leftovers saved” video',
     searchVolume: 400,
@@ -242,6 +247,7 @@ export const CATALOG: Record<string, ProductDef> = {
   },
   coffeescale: {
     id: 'coffeescale',
+    insights: ['Small, obsessive niche. Low competition.', 'Coffee nerds pay for precision; the timer is a must-have.', 'Search volume is low: you’ll rely on social ads.'],
     name: 'Pour-Over Coffee Scale',
     emoji: '☕',
     category: 'kitchen',
@@ -257,7 +263,7 @@ export const CATALOG: Record<string, ProductDef> = {
     size: 1,
     repeatability: 0.3,
     trend: { kind: 'evergreen' },
-    unlockStage: 2,
+    unlockStage: 1,
     appearsDay: 0,
     videoHook: '“The perfect pour” video',
     searchVolume: 180,
@@ -274,6 +280,7 @@ export const CATALOG: Record<string, ProductDef> = {
   },
   bands: {
     id: 'bands',
+    insights: ['January demand explodes with New Year resolutions.', 'Light and cheap to ship, but full of copycats.', 'Fresh-start audiences are huge in winter, gone by March.'],
     name: 'Resistance Band Set',
     emoji: '🎗️',
     category: 'fitness',
@@ -289,7 +296,7 @@ export const CATALOG: Record<string, ProductDef> = {
     size: 0.5,
     repeatability: 0.4,
     trend: { kind: 'seasonal', season: [300, 345, 2.4] },
-    unlockStage: 2,
+    unlockStage: 1,
     appearsDay: 0,
     videoHook: '“30-second living-room workout” video',
     searchVolume: 500,
@@ -306,6 +313,7 @@ export const CATALOG: Record<string, ProductDef> = {
   },
   sunsetlamp: {
     id: 'sunsetlamp',
+    insights: ['Going viral on LoopShop: huge now, gone in weeks.', 'Photos must be shot in a dark room.', 'Order small and fast, or miss the wave.'],
     name: 'Sunset Projection Lamp',
     emoji: '🌅',
     category: 'home',
@@ -337,6 +345,7 @@ export const CATALOG: Record<string, ProductDef> = {
   },
   cables: {
     id: 'cables',
+    insights: ['Impulse buy at a low price: volume game, thin margins.', 'Before/after desk shots perform best.', 'Very high search volume.'],
     name: 'Magnetic Cable Organizer',
     emoji: '🧲',
     category: 'desk',
@@ -352,7 +361,7 @@ export const CATALOG: Record<string, ProductDef> = {
     size: 0.3,
     repeatability: 0.6,
     trend: { kind: 'evergreen' },
-    unlockStage: 3,
+    unlockStage: 1,
     appearsDay: 0,
     videoHook: '“Cable chaos to calm” video',
     searchVolume: 700,
@@ -368,6 +377,7 @@ export const CATALOG: Record<string, ProductDef> = {
   },
   blanket: {
     id: 'blanket',
+    insights: ['Winter best-seller, quiet in summer.', 'Bulky: eats storage and shipping margin.', 'Premium buyers expect a washable cover.'],
     name: 'Weighted Blanket',
     emoji: '🛏️',
     category: 'home',
@@ -399,6 +409,7 @@ export const CATALOG: Record<string, ProductDef> = {
   },
   yogamat: {
     id: 'yogamat',
+    insights: ['Steady all year with a January bump.', 'Bulky to store and ship.', 'Grip is the #1 thing buyers mention.'],
     name: 'Cork Yoga Mat',
     emoji: '🧘',
     category: 'fitness',

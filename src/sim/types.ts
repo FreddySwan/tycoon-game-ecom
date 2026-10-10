@@ -10,6 +10,10 @@ export type Freight = 'air' | 'sea';
 export type Packaging = 'basic' | 'sturdy' | 'branded';
 export type CreativeType = 'white' | 'video' | 'review' | 'ugc';
 export type TileId = 'rack' | 'station' | 'conveyor' | 'robot';
+export type AdSource = 'scrollr' | 'seekly' | 'creator' | 'sponsored';
+export type OrderSource = AdSource | 'organic' | 'marketplace' | 'repeat' | 'email' | 'wholesale';
+export type HookType = 'problem' | 'benefit' | 'emotional' | 'social' | 'urgency';
+export type Cta = 'shop' | 'learn' | 'get';
 export type PLCategory =
   | 'revenue'
   | 'refunds'
@@ -94,6 +98,37 @@ export interface PhotoChoice {
   light: 'window' | 'lamp' | 'overhead';
   prop: 'none' | 'cat' | 'accessory';
   angle: 'top' | 'angled' | 'eye';
+  /** Framing: product position in the frame (0..1) and camera zoom. */
+  x?: number;
+  y?: number;
+  zoom?: number;
+}
+
+export interface Creative {
+  photo: number;
+  hook: string;
+  cta: Cta;
+}
+
+/** One slice of the P&L, used per product and per channel. */
+export interface Slice {
+  orders: number;
+  units: number;
+  revenue: number;
+  refunds: number;
+  cogs: number;
+  fees: number;
+  fulfillment: number;
+  thirdParty: number;
+  ads: number;
+}
+
+export interface AdDay {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  orders: number;
+  revenue: number;
 }
 
 export interface TrendDef {
@@ -136,6 +171,8 @@ export interface ProductDef {
   exclusive?: boolean;
   baseId?: string;
   qualityBonus?: number;
+  /** What a deep-dive research turns up: complaints about rivals, audience hints, pricing. */
+  insights?: string[];
 }
 
 export interface SupplierDef {
@@ -265,6 +302,8 @@ export interface PurchaseOrder {
   totalCost: number;
   /** Amount still owed to the supplier (payment terms). */
   balanceDue: number;
+  /** Net-30 terms: the balance is paid 30 days after delivery instead of at shipping. */
+  net30?: boolean;
   auto: boolean;
 }
 
@@ -316,6 +355,7 @@ export interface ProductState {
   listings: Partial<Record<ChannelId, Listing>>;
   reorder: ReorderRule;
   ugc: boolean;
+  creatives: Record<CreativeType, Creative>;
   copycat: number;
   reviews: { count: number; sum: number; hist: [number, number, number, number, number] };
   sold: number;
@@ -434,6 +474,12 @@ export interface DailyRecord {
   productOrders: Record<string, number>;
   brandRevenue: Record<number, number>;
   brandCost: Record<number, number>;
+  productPL: Record<string, Slice>;
+  channelPL: Partial<Record<ChannelId, Slice>>;
+  adStats: Record<string, Partial<Record<AdSource, AdDay>>>;
+  sources: Partial<Record<OrderSource, number>>;
+  /** Orders you pack and ship yourself (excludes marketplace-fulfilled). */
+  ownOrders?: number;
 }
 
 export interface MonthReport {
@@ -503,6 +549,8 @@ export interface LabProject {
 
 export interface GameState {
   version: 2;
+  /** Schema revision inside v2, for migrating saves. */
+  rev?: number;
   rng: number;
   day: number;
   cash: number;
@@ -537,6 +585,8 @@ export interface GameState {
   eventCooldowns: Record<string, number>;
   bills: Bill[];
   receivables: Receivable[];
+  /** Money owed to suppliers on net terms (not an expense: it's inventory). */
+  payables: Receivable[];
   history: DailyRecord[];
   reports: MonthReport[];
   milestones: Partial<Record<MilestoneId, number>>;
@@ -554,6 +604,11 @@ export interface GameState {
   regions: Partial<Record<RegionId, { entered: boolean; warehouse: boolean; day: number }>>;
   wholesale: WholesaleOrder[];
   lab: LabProject[];
+  adPolicy: { maxSharePct: number; floor: number; marginPct: number };
+  autopilot: { staffing: boolean; buildout: boolean };
+  research: Record<string, number>;
+  creatorPosts: { day: number; productId: string; tier: string; cost: number; viral: boolean; handle: string }[];
+  shortlist: string[];
   ambition: AmbitionId | null;
   ambitionsDone: AmbitionId[];
   stageOffer: StageId | null;

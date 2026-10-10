@@ -1,6 +1,9 @@
 import { cpmSeason, demandSeason, dayOfYear } from './calendar';
 import {
   BENEFITS,
+  CTA_FIT,
+  HOOK_FIT,
+  hooksFor,
   BUNDLE_SHARE,
   CATALOG,
   CATEGORIES,
@@ -30,8 +33,11 @@ import type {
   CategoryId,
   ChannelId,
   GameState,
+  AdDay,
+  AdSource,
   PLCategory,
   ProductDef,
+  Slice,
   ProductState,
   SupplierId,
 } from './types';
@@ -316,10 +322,31 @@ export function cellForecast(s: GameState, pid: string, cell: AdCell): CellForec
   const marketer = s.team.marketer.count > 0 ? 1.1 : 1;
   const doy = dayOfYear(s.day);
   const resolution = cell.audienceId === 'fresh' && doy >= 300 && doy <= 345 ? 1.4 : 1;
-  const ctr = cre.ctr * cre.fit[idx] * fatigue * marketer * Math.min(1.8, trendMult(s, pid)) * resolution;
+  const cm = creativeMult(s, pid, cell.creative, idx);
+  const ctr = cre.ctr * cre.fit[idx] * fatigue * marketer * Math.min(1.8, trendMult(s, pid)) * resolution * cm.ctr;
   const cpc = cpm / (1000 * ctr);
-  const cvr = siteCVR(s, pid, aud, cre.cvrBoost);
+  const cvr = siteCVR(s, pid, aud, cre.cvrBoost) * cm.cvr;
   return { cpm, ctr, cpc, cvr, cpa: cpc / cvr };
+}
+
+/** How the chosen photo, hook and call-to-action of a creative land with an audience. */
+export function creativeMult(s: GameState, pid: string, type: AdCell['creative'], audIdx: number): { ctr: number; cvr: number; notes: string[] } {
+  const p = s.products[pid];
+  const cr = p.creatives?.[type];
+  if (!cr) return { ctr: 1, cvr: 1, notes: [] };
+  const hooks = hooksFor(def(s, pid));
+  const hook = hooks.find((h) => h.id === cr.hook) ?? hooks[0];
+  const fit = HOOK_FIT[hook.type];
+  const notes: string[] = [];
+  let believable = 1;
+  if (hook.needsReviews && p.reviews.count < hook.needsReviews) {
+    believable = 0.7;
+    notes.push('Social proof without reviews looks fake');
+  }
+  const photo = cr.photo < 0 ? 0.75 + p.photoStars * 0.08 : 1;
+  if (cr.photo < 0 && p.photoStars >= 4) notes.push('Your own photo stands out');
+  if (cr.photo < 0 && p.photoStars <= 2) notes.push('Weak photo hurts clicks');
+  return { ctr: fit.ctr[audIdx] * CTA_FIT[cr.cta].ctr * photo * believable, cvr: fit.cvr * CTA_FIT[cr.cta].cvr, notes };
 }
 
 export function creativeUnlocked(s: GameState, pid: string, creative: AdCell['creative']): boolean {
@@ -493,6 +520,14 @@ export function avgDailyOrders(s: GameState, pid: string, days = 7): number {
   return d.length ? d.reduce((a, x) => a + x, 0) / d.length : 0;
 }
 
+/** Sales pace that ignores short spikes: the 7-day average, capped at 1.3× the longer-run average. */
+export function steadyDailyUnits(s: GameState, pid: string): number {
+  const d7 = avgDailyOrders(s, pid, 7);
+  const d30 = avgDailyOrders(s, pid, 30);
+  const pace = s.products[pid].daily.length >= 14 ? Math.min(d7, Math.max(d30, 1) * 1.3) : d7;
+  return pace * unitsPerOrder(s, pid);
+}
+
 export function stockDays(s: GameState, pid: string): number | null {
   const daily = avgDailyOrders(s, pid, 5) * unitsPerOrder(s, pid);
   if (daily <= 0) return null;
@@ -549,6 +584,7 @@ export interface CashPools {
   shelf: number;
   payouts: number;
   receivables: number;
+  payables: number;
 }
 
 export function cashPools(s: GameState): CashPools {
@@ -560,6 +596,7 @@ export function cashPools(s: GameState): CashPools {
     shelf: Object.values(s.products).reduce((a, p) => a + p.inventory.costTotal, 0),
     payouts: Object.values(s.channelAccrued).reduce((a, v) => a + (v ?? 0), 0),
     receivables: s.receivables.reduce((a, r) => a + r.amount, 0),
+    payables: (s.payables ?? []).reduce((a, r) => a + r.amount, 0) + s.pos.reduce((a, p) => a + (p.status !== 'arrived' ? p.balanceDue : 0), 0),
   };
 }
 
@@ -595,7 +632,8 @@ export function runwayProjection(s: GameState, days = 30): number[] {
     for (const po of s.pos) {
       if (po.status === 'arrived') continue;
       if (po.arrivesDay === day) stockUnits += po.qty;
-      if (po.productionDoneDay === day && po.balanceDue) cash -= po.balanceDue;
+      if (po.productionDoneDay === day && po.balanceDue && !po.net30) cash -= po.balanceDue;
+      if (po.net30 && po.arrivesDay + 30 === day) cash -= po.balanceDue;
     }
     const selling = stockUnits > 0;
     stockUnits = Math.max(0, stockUnits - dailyUnits);
@@ -605,8 +643,68 @@ export function runwayProjection(s: GameState, days = 30): number[] {
       if (due && b.category !== 'payroll') cash -= b.amount;
     }
     for (const r of s.receivables) if (r.dueDay === day) cash += r.amount;
+    for (const p of s.payables ?? []) if (p.dueDay === day) cash -= p.amount;
     if (s.loan && s.loan.dueDay === day) cash -= s.loan.amount;
     out.push(Math.round(cash));
   }
   return out;
+}
+
+// ───────────────────────────── analytics ─────────────────────────────
+
+export function zeroSlice(): Slice {
+  return { orders: 0, units: 0, revenue: 0, refunds: 0, cogs: 0, fees: 0, fulfillment: 0, thirdParty: 0, ads: 0 };
+}
+
+export function sliceProfit(x: Slice): number {
+  return x.revenue - x.refunds - x.cogs - x.fees - x.fulfillment - x.ads;
+}
+
+function addSlice(into: Slice, x: Slice | undefined): void {
+  if (!x) return;
+  for (const k of Object.keys(into) as (keyof Slice)[]) into[k] += x[k] ?? 0;
+}
+
+/** Per-product P&L over the last `days` days (contribution: before payroll, rent and overhead). */
+export function productTrailing(s: GameState, days: number): Record<string, Slice> {
+  const out: Record<string, Slice> = {};
+  for (const r of s.history.slice(-days)) for (const [pid, x] of Object.entries(r.productPL ?? {})) addSlice((out[pid] ??= zeroSlice()), x);
+  return out;
+}
+
+export function channelTrailing(s: GameState, days: number): Partial<Record<ChannelId, Slice>> {
+  const out: Partial<Record<ChannelId, Slice>> = {};
+  for (const r of s.history.slice(-days)) for (const [ch, x] of Object.entries(r.channelPL ?? {})) addSlice((out[ch as ChannelId] ??= zeroSlice()), x);
+  return out;
+}
+
+export function zeroAd(): AdDay {
+  return { spend: 0, impressions: 0, clicks: 0, orders: 0, revenue: 0 };
+}
+
+/** Ad results per product and source over the last `days` days, plus totals per source. */
+export function adTrailing(s: GameState, days: number): { byProduct: Record<string, Partial<Record<AdSource, AdDay>>>; total: Record<AdSource, AdDay> } {
+  const byProduct: Record<string, Partial<Record<AdSource, AdDay>>> = {};
+  const total: Record<AdSource, AdDay> = { scrollr: zeroAd(), seekly: zeroAd(), creator: zeroAd(), sponsored: zeroAd() };
+  for (const r of s.history.slice(-days)) {
+    for (const [pid, srcs] of Object.entries(r.adStats ?? {})) {
+      for (const [src, x] of Object.entries(srcs)) {
+        const row = ((byProduct[pid] ??= {})[src as AdSource] ??= zeroAd());
+        for (const k of Object.keys(row) as (keyof AdDay)[]) {
+          row[k] += x?.[k] ?? 0;
+          total[src as AdSource][k] += x?.[k] ?? 0;
+        }
+      }
+    }
+  }
+  return { byProduct, total };
+}
+
+/** Average orders a day that you ship yourself (not marketplace-fulfilled), and in total. */
+export function orderPace(s: GameState, days: number): { total: number; own: number } {
+  const recent = s.history.slice(-days);
+  if (!recent.length) return { total: 0, own: 0 };
+  const total = recent.reduce((a, r) => a + r.orders, 0) / recent.length;
+  const own = recent.reduce((a, r) => a + (r.ownOrders ?? r.orders), 0) / recent.length;
+  return { total, own };
 }
