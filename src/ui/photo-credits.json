@@ -2,6 +2,15 @@
  "dogbowl": [
   {
    "src": "dogbowl-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 679,
+   "h": 679
+  },
+  {
+   "src": "dogbowl-1.jpg",
    "title": "Green Spiral Slow Feeder Dog Bowl",
    "creator": "ELTORO.VET",
    "license": "CC0 1.0",
@@ -10,7 +19,7 @@
    "h": 720
   },
   {
-   "src": "dogbowl-1.jpg",
+   "src": "dogbowl-2.jpg",
    "title": "Blue Slow Feeder Dog Bowl with Raised Studs and Ridges",
    "creator": "ELTORO.VET",
    "license": "CC0 1.0",
@@ -19,7 +28,7 @@
    "h": 720
   },
   {
-   "src": "dogbowl-2.jpg",
+   "src": "dogbowl-3.jpg",
    "title": "Bright Green Spiral Slow Feeder Dog Bowl (Top View)",
    "creator": "ELTORO.VET",
    "license": "CC0 1.0",
@@ -28,7 +37,7 @@
    "h": 720
   },
   {
-   "src": "dogbowl-3.jpg",
+   "src": "dogbowl-4.jpg",
    "title": "Dog food",
    "creator": "MShades",
    "license": "CC BY 2.0",
@@ -40,6 +49,15 @@
  "glowplanter": [
   {
    "src": "glowplanter-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 800,
+   "h": 800
+  },
+  {
+   "src": "glowplanter-1.jpg",
    "title": "Cactus Plant",
    "creator": "Dominic's pics",
    "license": "CC BY 2.0",
@@ -48,7 +66,7 @@
    "h": 720
   },
   {
-   "src": "glowplanter-1.jpg",
+   "src": "glowplanter-2.jpg",
    "title": "Blue salt ceramic potted plant in a fence, pansies, front yard, Broadview, Seattle, Washington, USA",
    "creator": "Wonderlane",
    "license": "CC BY 2.0",
@@ -57,7 +75,7 @@
    "h": 720
   },
   {
-   "src": "glowplanter-2.jpg",
+   "src": "glowplanter-3.jpg",
    "title": "Succulent Pots",
    "creator": "edenpictures",
    "license": "CC BY 2.0",
@@ -69,6 +87,15 @@
  "laptopstand": [
   {
    "src": "laptopstand-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 675,
+   "h": 800
+  },
+  {
+   "src": "laptopstand-1.jpg",
    "title": "RTA: 2COOL Black Trendy Laptop Stand",
    "creator": "Lotus823",
    "license": "CC BY 2.0",
@@ -77,7 +104,7 @@
    "h": 582
   },
   {
-   "src": "laptopstand-1.jpg",
+   "src": "laptopstand-2.jpg",
    "title": "Cardboard laptop stand x2",
    "creator": "stuart.childs",
    "license": "CC BY 2.0",
@@ -86,7 +113,7 @@
    "h": 540
   },
   {
-   "src": "laptopstand-2.jpg",
+   "src": "laptopstand-3.jpg",
    "title": "Temporary Setup",
    "creator": "MattsMacintosh",
    "license": "CC BY 2.0",
@@ -98,6 +125,15 @@
  "catfountain": [
   {
    "src": "catfountain-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 763,
+   "h": 800
+  },
+  {
+   "src": "catfountain-1.jpg",
    "title": "Ginger cat drinking water pond",
    "creator": null,
    "license": "CC0 1.0",
@@ -106,7 +142,7 @@
    "h": 480
   },
   {
-   "src": "catfountain-1.jpg",
+   "src": "catfountain-2.jpg",
    "title": "Charlie, my cat, drinks water from the tap",
    "creator": "Yuval Y",
    "license": "CC BY 2.0",
@@ -115,7 +151,7 @@
    "h": 540
   },
   {
-   "src": "catfountain-2.jpg",
+   "src": "catfountain-3.jpg",
    "title": "Rosie drinking fresh rain water from the lotus fountain with her delicate pink tongue, Superdog, 'S' symbol, red Tibetan Buddhist blessing cord, rocks, spring, A Garden for the Buddha, Seattle, Washington, USA",
    "creator": "Wonderlane",
    "license": "CC0 1.0",
@@ -127,6 +163,15 @@
  "siliconelids": [
   {
    "src": "siliconelids-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 778,
+   "h": 800
+  },
+  {
+   "src": "siliconelids-1.jpg",
    "title": "Curried vegan risotto - Risoto vegano al curry",
    "creator": "Lablascovegmenu",
    "license": "CC BY 2.0",
@@ -135,7 +180,7 @@
    "h": 540
   },
   {
-   "src": "siliconelids-1.jpg",
+   "src": "siliconelids-2.jpg",
    "title": "Vegan fried rice",
    "creator": "Lablascovegmenu",
    "license": "CC BY 2.0",
@@ -144,7 +189,7 @@
    "h": 500
   },
   {
-   "src": "siliconelids-2.jpg",
+   "src": "siliconelids-3.jpg",
    "title": "070902 waffle kitchen",
    "creator": "Dan4th",
    "license": "CC BY 2.0",
@@ -156,6 +201,15 @@
  "coffeescale": [
   {
    "src": "coffeescale-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 783,
+   "h": 800
+  },
+  {
+   "src": "coffeescale-1.jpg",
    "title": "acaia coffee scale (Credit to https://coffee-rank.com)",
    "creator": "coffee-rank",
    "license": "CC BY 2.0",
@@ -164,7 +218,7 @@
    "h": 720
   },
   {
-   "src": "coffeescale-1.jpg",
+   "src": "coffeescale-2.jpg",
    "title": "Aeropress on Coffee Scale",
    "creator": "We Love Coffee Makers",
    "license": "CC BY 2.0",
@@ -173,7 +227,7 @@
    "h": 720
   },
   {
-   "src": "coffeescale-2.jpg",
+   "src": "coffeescale-3.jpg",
    "title": "Pour Over Coffee with a Hario V60 at Fourteen Eighteen Coffehouse",
    "creator": "nan palmero",
    "license": "CC BY 2.0",
@@ -185,6 +239,15 @@
  "bands": [
   {
    "src": "bands-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 800,
+   "h": 790
+  },
+  {
+   "src": "bands-1.jpg",
    "title": "11 piece resistance band set",
    "creator": "953031326",
    "license": "Public Domain Mark 1.0",
@@ -193,7 +256,7 @@
    "h": 720
   },
   {
-   "src": "bands-1.jpg",
+   "src": "bands-2.jpg",
    "title": "My home gym. Resistance bands. The Swiss army knife for fitness. #fitness #homegym #gym #resistance #resistancebands #stability #mobility #strength #cardio #bodybuilding",
    "creator": "Christos Pontikis",
    "license": "Public Domain Mark 1.0",
@@ -202,7 +265,7 @@
    "h": 720
   },
   {
-   "src": "bands-2.jpg",
+   "src": "bands-3.jpg",
    "title": "Running Shoes, Hand Weights & Resistance Band",
    "creator": "Alabama Extension",
    "license": "CC0 1.0",
@@ -214,6 +277,15 @@
  "sunsetlamp": [
   {
    "src": "sunsetlamp-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 800,
+   "h": 800
+  },
+  {
+   "src": "sunsetlamp-1.jpg",
    "title": "farolito",
    "creator": "Luz Adriana Villa A.",
    "license": "CC BY 2.0",
@@ -222,7 +294,7 @@
    "h": 281
   },
   {
-   "src": "sunsetlamp-1.jpg",
+   "src": "sunsetlamp-2.jpg",
    "title": "Light Bulb",
    "creator": "derekskey",
    "license": "CC BY 2.0",
@@ -231,7 +303,7 @@
    "h": 720
   },
   {
-   "src": "sunsetlamp-2.jpg",
+   "src": "sunsetlamp-3.jpg",
    "title": "Fairy DNA",
    "creator": "kyz",
    "license": "CC BY 2.0",
@@ -243,6 +315,15 @@
  "cables": [
   {
    "src": "cables-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 800,
+   "h": 800
+  },
+  {
+   "src": "cables-1.jpg",
    "title": "The One True Cable Management Solution",
    "creator": "contraption",
    "license": "CC BY 2.0",
@@ -251,7 +332,7 @@
    "h": 538
   },
   {
-   "src": "cables-1.jpg",
+   "src": "cables-2.jpg",
    "title": "Office desk (fisheye)",
    "creator": "jremick",
    "license": "CC BY 2.0",
@@ -260,7 +341,7 @@
    "h": 478
   },
   {
-   "src": "cables-2.jpg",
+   "src": "cables-3.jpg",
    "title": "Home Office #2",
    "creator": "rintakumpu",
    "license": "CC BY 2.0",
@@ -272,6 +353,15 @@
  "blanket": [
   {
    "src": "blanket-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 800,
+   "h": 576
+  },
+  {
+   "src": "blanket-1.jpg",
    "title": "Best Weighted Blankets",
    "creator": "samuelemunemu321",
    "license": "Public Domain Mark 1.0",
@@ -280,7 +370,7 @@
    "h": 236
   },
   {
-   "src": "blanket-1.jpg",
+   "src": "blanket-2.jpg",
    "title": "Backside of my DIY 12 pound Weighted Blanket feels like a Hug",
    "creator": "Forsaken Fotos",
    "license": "CC BY 2.0",
@@ -289,7 +379,7 @@
    "h": 720
   },
   {
-   "src": "blanket-2.jpg",
+   "src": "blanket-3.jpg",
    "title": "My Three Pugs",
    "creator": "scottallenonline",
    "license": "CC BY 2.0",
@@ -301,6 +391,15 @@
  "yogamat": [
   {
    "src": "yogamat-0.jpg",
+   "title": "Product photo",
+   "creator": "Provided by the developer",
+   "license": "Supplied image",
+   "url": "",
+   "w": 800,
+   "h": 749
+  },
+  {
+   "src": "yogamat-1.jpg",
    "title": "Jan 12: The Yoga crew were here!",
    "creator": "debtony",
    "license": "CC BY 2.0",
@@ -309,7 +408,7 @@
    "h": 538
   },
   {
-   "src": "yogamat-1.jpg",
+   "src": "yogamat-2.jpg",
    "title": "Fit woman meditating on yoga mat with dumbbells and water bottle next to her",
    "creator": "Ivan Radic",
    "license": "CC BY 2.0",
@@ -318,7 +417,7 @@
    "h": 479
   },
   {
-   "src": "yogamat-2.jpg",
+   "src": "yogamat-3.jpg",
    "title": "A woman rolling up her exercising mat",
    "creator": "Ivan Radic",
    "license": "CC BY 2.0",

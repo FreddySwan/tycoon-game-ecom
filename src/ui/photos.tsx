@@ -32,7 +32,9 @@ export function allCredits(): { pid: string; photo: Photo }[] {
 export function ProductImage({ game, pid, index = 0, size = 64, round = 10, style }: { game: GameState; pid: string; index?: number; size?: number | string; round?: number; style?: CSSProperties }) {
   const list = photosFor(game, pid);
   const p = list[index % Math.max(1, list.length)];
-  const box: CSSProperties = { width: size, height: size, borderRadius: round, objectFit: 'cover', flex: 'none', background: '#f3e3cf', display: 'block', ...style };
+  // Slot 0 is a clean product shot on white: show it whole. Other slots are lifestyle photos: fill the frame.
+  const main = index % Math.max(1, list.length) === 0;
+  const box: CSSProperties = { width: size, height: size, borderRadius: round, objectFit: main ? 'contain' : 'cover', flex: 'none', background: main ? '#fff' : '#f3e3cf', display: 'block', ...style };
   if (!p) return <div style={{ ...box, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: typeof size === 'number' ? size * 0.5 : 28 }}>{def(game, pid).emoji}</div>;
   return <img src={photoUrl(p)} alt={def(game, pid).name} style={box} loading="lazy" />;
 }
