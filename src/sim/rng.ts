@@ -40,3 +40,16 @@ export function poisson(s: GameState, mean: number): number {
   } while (p > L);
   return k - 1;
 }
+
+/** Binomial sample; normal approximation for large n. */
+export function binomial(s: GameState, n: number, p: number): number {
+  if (n <= 0 || p <= 0) return 0;
+  if (p >= 1) return n;
+  if (n < 40) {
+    let k = 0;
+    for (let i = 0; i < n; i++) if (rand(s) < p) k++;
+    return k;
+  }
+  const mean = n * p;
+  return Math.max(0, Math.min(n, Math.round(normal(s, mean, Math.sqrt(mean * (1 - p))))));
+}

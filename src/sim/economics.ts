@@ -1,56 +1,128 @@
+import { cpmSeason, demandSeason, dayOfYear } from './calendar';
 import {
+  BENEFITS,
   BUNDLE_SHARE,
+  CATALOG,
+  CATEGORIES,
+  CHANNELS,
+  CREATIVES,
   CUSTOMER_SHIPPING_CHARGE,
   FOUNDER_HOURS,
+  HOURS,
   MODULES,
   PACKAGING_COST,
-  PAYMENT_FEE_FLAT,
-  PAYMENT_FEE_PCT,
-  PAYOUT_EVERY,
-  PRODUCTS,
+  PACKER_RATE,
+  RACK_STORAGE,
+  REGIONS,
+  REGION_ORDER,
+  ROLES,
+  ROLE_ORDER,
+  SPACES,
   SUPPLIERS,
+  SUPPORT_RATE,
   THANK_YOU_COST,
+  THIRD_PARTY,
 } from './data';
-import type { AdCell, AudienceDef, GameState, ProductDef, SupplierId } from './types';
+import type {
+  AdCell,
+  AudienceDef,
+  Brand,
+  CategoryId,
+  ChannelId,
+  GameState,
+  PLCategory,
+  ProductDef,
+  ProductState,
+  SupplierId,
+} from './types';
 
-export function product(s: GameState): ProductDef {
-  return PRODUCTS[s.productId ?? 'dogbowl'];
+export const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// ───────────────────────────── lookups ─────────────────────────────
+
+export function def(s: GameState, pid: string): ProductDef {
+  return s.customDefs[pid] ?? CATALOG[pid];
 }
 
-export function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+export function prod(s: GameState, pid: string): ProductState {
+  return s.products[pid];
 }
 
-export function listPrice(s: GameState, supplierId: SupplierId, qty: number): number {
-  const tier = qty >= 1000 ? 0.855 : qty >= 500 ? 0.945 : 1;
-  return round2(product(s).baseUnitCost * SUPPLIERS[supplierId].priceMult * tier);
+export function brandOf(s: GameState, pid: string): Brand {
+  const p = s.products[pid];
+  return s.brands.find((b) => b.id === p?.brandId) ?? s.brands[0];
 }
 
-export function freightPerUnit(s: GameState, freight: 'air' | 'sea'): number {
-  const p = product(s);
-  return freight === 'air' ? p.airFreight : p.seaFreight;
+export function liveProducts(s: GameState): string[] {
+  return s.productOrder.filter((id) => s.products[id] && !s.products[id].retired);
 }
 
-/** Average landed cost of stock on hand, or a quote-based estimate before any stock exists. */
-export function landedUnitCost(s: GameState): number {
-  if (s.inventory.onHand > 0) return s.inventory.costTotal / s.inventory.onHand;
-  const last = s.pos[s.pos.length - 1];
+export function audiences(s: GameState, pid: string): [AudienceDef, AudienceDef] {
+  return CATEGORIES[def(s, pid).category].audiences;
+}
+
+// ───────────────────────────── sourcing ─────────────────────────────
+
+export function activeContract(s: GameState, supplierId: SupplierId) {
+  return s.contracts.find((c) => c.supplierId === supplierId && c.endDay > s.day);
+}
+
+export function listPrice(s: GameState, pid: string, supplierId: SupplierId, qty: number): number {
+  const tier = qty >= 10000 ? 0.8 : qty >= 3000 ? 0.83 : qty >= 1000 ? 0.855 : qty >= 500 ? 0.945 : 1;
+  const contract = activeContract(s, supplierId);
+  const priceUp = 1 + (s.counters[`priceUp-${supplierId}`] ?? 0);
+  return round2(def(s, pid).baseUnitCost * SUPPLIERS[supplierId].priceMult * tier * priceUp * (contract ? 1 - contract.discount : 1));
+}
+
+export function freightPerUnit(s: GameState, pid: string, freight: 'air' | 'sea'): number {
+  const d = def(s, pid);
+  return freight === 'air' ? d.airFreight : d.seaFreight;
+}
+
+export function landedUnitCost(s: GameState, pid: string): number {
+  const inv = s.products[pid].inventory;
+  if (inv.onHand > 0) return inv.costTotal / inv.onHand;
+  const last = [...s.pos].reverse().find((p) => p.productId === pid);
   if (last) return last.unitPrice + last.freightPerUnit;
-  return listPrice(s, 'brightway', 300) + product(s).airFreight;
+  return listPrice(s, pid, 'brightway', 300) + def(s, pid).airFreight;
 }
 
-export function stockQuality(s: GameState): number {
-  if (s.inventory.onHand > 0) return s.inventory.qualityTotal / s.inventory.onHand;
-  const last = s.pos[s.pos.length - 1];
+export function stockQuality(s: GameState, pid: string): number {
+  const inv = s.products[pid].inventory;
+  if (inv.onHand > 0) return inv.qualityTotal / inv.onHand;
+  const last = [...s.pos].reverse().find((p) => p.productId === pid);
   return last ? last.quality : 0.8;
 }
 
-export function effectivePrice(s: GameState): number {
-  return round2(s.offer.price * (1 - s.offer.discountPct / 100));
+export function incomingUnits(s: GameState, pid?: string): number {
+  return s.pos.filter((p) => p.status !== 'arrived' && (!pid || p.productId === pid)).reduce((a, p) => a + p.qty, 0);
 }
 
-export function bundlePrice(s: GameState): number {
-  return Math.round(effectivePrice(s) * 1.7) - 0.01;
+// ───────────────────────────── offer ─────────────────────────────
+
+export function effectivePrice(s: GameState, pid: string): number {
+  const p = s.products[pid];
+  return round2(p.price * (1 - p.discountPct / 100));
+}
+
+export function bundlePrice(s: GameState, pid: string): number {
+  return Math.round(effectivePrice(s, pid) * 1.7) - 0.01;
+}
+
+export function bundleShare(s: GameState, pid: string): number {
+  return s.products[pid].bundle ? BUNDLE_SHARE : 0;
+}
+
+/** Unit price a shopper sees on a channel. Marketplace lightning deals take 20% off. */
+export function channelPrice(s: GameState, pid: string, ch: ChannelId): number {
+  if (ch === 'store' || ch === 'loopshop') return effectivePrice(s, pid);
+  const l = s.products[pid].listings[ch];
+  const base = l?.price ?? s.products[pid].price;
+  return round2(l && l.promoUntil >= s.day ? base * 0.8 : base);
+}
+
+export function channelFee(s: GameState, ch: ChannelId): number {
+  return s.feeOverrides[ch] ?? CHANNELS[ch].feePct;
 }
 
 export interface OrderBreakdown {
@@ -62,15 +134,19 @@ export interface OrderBreakdown {
   contribution: number;
 }
 
-export function orderBreakdown(s: GameState, bundle: boolean): OrderBreakdown {
-  const p = product(s);
+export function orderBreakdown(s: GameState, pid: string, bundle: boolean, ch: ChannelId = 'store'): OrderBreakdown {
+  const d = def(s, pid);
+  const brand = brandOf(s, pid);
   const units = bundle ? 2 : 1;
-  const goods = bundle ? bundlePrice(s) : effectivePrice(s);
-  const charged = goods + (s.offer.freeShipping ? 0 : CUSTOMER_SHIPPING_CHARGE);
-  const fees = charged * PAYMENT_FEE_PCT + PAYMENT_FEE_FLAT;
-  const shipping = p.shipToCustomer * (bundle ? 1.25 : 1);
-  const packaging = PACKAGING_COST[s.offer.packaging] + (s.offer.thankYouCard ? THANK_YOU_COST : 0);
-  const cogs = landedUnitCost(s) * units;
+  const own = ch === 'store' || ch === 'loopshop';
+  const goods = own ? (bundle ? bundlePrice(s, pid) : effectivePrice(s, pid)) : channelPrice(s, pid, ch) * units;
+  const charged = goods + (ch === 'store' && !brand.freeShipping ? CUSTOMER_SHIPPING_CHARGE : 0);
+  const c = CHANNELS[ch];
+  const program = !own && !!s.products[pid].listings[ch]?.program && !!c.program;
+  const fees = charged * channelFee(s, ch) + c.feeFlat + (program ? c.program!.feePerUnit * units : 0);
+  const shipping = program ? 0 : d.shipToCustomer * (bundle ? 1.25 : 1) + (s.thirdParty ? THIRD_PARTY.perOrder : 0);
+  const packaging = program ? 0 : PACKAGING_COST[brand.packaging] + (brand.thankYouCard ? THANK_YOU_COST : 0);
+  const cogs = landedUnitCost(s, pid) * units;
   return {
     charged: round2(charged),
     fees: round2(fees),
@@ -81,34 +157,46 @@ export function orderBreakdown(s: GameState, bundle: boolean): OrderBreakdown {
   };
 }
 
-export function bundleShare(s: GameState): number {
-  return s.offer.bundle ? BUNDLE_SHARE : 0;
+/** What one average store order earns before advertising. */
+export function breakEvenCPA(s: GameState, pid: string): number {
+  const b = bundleShare(s, pid);
+  return round2(orderBreakdown(s, pid, false).contribution * (1 - b) + orderBreakdown(s, pid, true).contribution * b);
 }
 
-/** What one average order earns before advertising. Ads costing more than this per order lose money. */
-export function breakEvenCPA(s: GameState): number {
-  const b = bundleShare(s);
-  return round2(orderBreakdown(s, false).contribution * (1 - b) + orderBreakdown(s, true).contribution * b);
+export function averageOrderValue(s: GameState, pid: string): number {
+  const b = bundleShare(s, pid);
+  return round2(orderBreakdown(s, pid, false).charged * (1 - b) + orderBreakdown(s, pid, true).charged * b);
 }
 
-export function averageOrderValue(s: GameState): number {
-  const b = bundleShare(s);
-  return round2(orderBreakdown(s, false).charged * (1 - b) + orderBreakdown(s, true).charged * b);
+export function unitsPerOrder(s: GameState, pid: string): number {
+  return 1 + bundleShare(s, pid);
 }
 
-export function unitsPerOrder(s: GameState): number {
-  return 1 + bundleShare(s);
+// ───────────────────────────── reviews & trust ─────────────────────────────
+
+export function averageRating(s: GameState, pid?: string): number {
+  if (pid) {
+    const r = s.products[pid].reviews;
+    return r.count ? r.sum / r.count : 0;
+  }
+  let n = 0;
+  let sum = 0;
+  for (const p of Object.values(s.products)) {
+    n += p.reviews.count;
+    sum += p.reviews.sum;
+  }
+  return n ? sum / n : 0;
 }
 
-export function averageRating(s: GameState): number {
-  if (!s.reviews.length) return 0;
-  return s.reviews.reduce((a, r) => a + r.stars, 0) / s.reviews.length;
+export function reviewCount(s: GameState, pid?: string): number {
+  if (pid) return s.products[pid].reviews.count;
+  return Object.values(s.products).reduce((a, p) => a + p.reviews.count, 0);
 }
 
-export function reviewFactor(s: GameState): number {
-  const n = s.reviews.length;
+export function reviewFactor(s: GameState, pid: string): number {
+  const n = s.products[pid].reviews.count;
   if (!n) return 0.85;
-  return 0.85 + Math.min(1, n / 8) * ((averageRating(s) - 3) * 0.14 + 0.1);
+  return 0.85 + Math.min(1, n / 8) * ((averageRating(s, pid) - 3) * 0.14 + 0.1);
 }
 
 export interface TrustPart {
@@ -116,9 +204,12 @@ export interface TrustPart {
   value: number;
 }
 
-export function trustBreakdown(s: GameState): { total: number; parts: TrustPart[] } {
-  const m = s.store.modules;
-  const photo = s.store.photoStars;
+export function trustBreakdown(s: GameState, pid: string): { total: number; parts: TrustPart[] } {
+  const brand = brandOf(s, pid);
+  const p = s.products[pid];
+  const d = def(s, pid);
+  const m = brand.store.modules;
+  const photo = p.photoStars;
   const parts: TrustPart[] = [{ label: 'Base', value: 0.45 }];
   const add = (label: string, value: number) => value && parts.push({ label, value });
 
@@ -127,68 +218,81 @@ export function trustBreakdown(s: GameState): { total: number; parts: TrustPart[
   if (m.gallery) add('Gallery', m.gallery === 2 ? 0.1 : 0.06 * (photo / 4));
   if (m.description) {
     const mult = m.description === 2 ? 1.3 : 1;
-    const sum = s.store.benefits.reduce((a, id) => a + (product(s).benefits.find((b) => b.id === id)?.cvr ?? 0), 0);
+    const sum = p.benefits.reduce((a, id) => a + (d.benefits.find((b) => b.id === id)?.cvr ?? 0), 0);
     add('Description', sum * mult);
   }
   if (m.reviews) {
-    const n = s.reviews.length;
-    add('Reviews', n === 0 ? -0.02 : Math.min(0.14, n * 0.012) * ((averageRating(s) - 2) / 3));
+    const n = p.reviews.count;
+    add('Reviews', n === 0 ? -0.02 : Math.min(0.14, n * 0.012) * ((averageRating(s, pid) - 2) / 3));
   }
   if (m.badges) add('Trust badges', m.badges === 2 ? 0.05 : 0.04);
   if (m.faq) add('FAQ', 0.04);
   if (m.shipping) add('Shipping info', m.shipping === 2 ? 0.09 : 0.07);
   if (m.checkout) add('Checkout', m.checkout === 2 ? 0.1 : 0.05);
+  if (brand.packaging === 'branded') add('Branded unboxing', 0.03);
 
-  const count = MODULES.filter((d) => m[d.id] > 0).length;
+  const count = MODULES.filter((x) => m[x.id] > 0).length;
   const heavy = (m.hero === 2 ? 1 : 0) + (m.gallery === 2 ? 1 : 0);
   const clutter = Math.max(0, count - 7) * 0.03 + heavy * 0.015;
   if (clutter) parts.push({ label: 'Page load & clutter', value: -clutter });
 
-  const total = Math.min(1.3, Math.max(0.4, parts.reduce((a, p) => a + p.value, 0)));
+  const total = Math.min(1.3, Math.max(0.4, parts.reduce((a, x) => a + x.value, 0)));
   return { total, parts };
 }
 
-export function trust(s: GameState): number {
-  return trustBreakdown(s).total;
+export function trust(s: GameState, pid: string): number {
+  return trustBreakdown(s, pid).total;
 }
 
-export function returnRate(s: GameState): number {
-  const overPromise = s.store.benefits.reduce(
-    (a, id) => a + (product(s).benefits.find((b) => b.id === id)?.returns ?? 0),
-    0,
-  );
-  const ratio = effectivePrice(s) / product(s).refPrice;
+export function returnRate(s: GameState, pid: string): number {
+  const d = def(s, pid);
+  const overPromise = s.products[pid].benefits.reduce((a, id) => a + (d.benefits.find((b) => b.id === id)?.returns ?? 0), 0);
+  const ratio = effectivePrice(s, pid) / d.refPrice;
   const bargain = ratio < 0.8 ? 0.02 : ratio > 1.2 ? -0.01 : 0;
-  return Math.max(0.01, 0.02 + (1 - stockQuality(s)) * 0.1 + overPromise + bargain);
+  return Math.max(0.01, 0.02 + (1 - stockQuality(s, pid)) * 0.1 + overPromise + bargain);
 }
 
-export function perception(s: GameState): { label: string; ratio: number } {
-  const ratio = effectivePrice(s) / product(s).refPrice;
+export function perception(s: GameState, pid: string): { label: string; ratio: number } {
+  const ratio = effectivePrice(s, pid) / def(s, pid).refPrice;
   const label =
     ratio < 0.75 ? 'Bargain bin' : ratio < 0.92 ? 'Good deal' : ratio < 1.12 ? 'Fair price' : ratio < 1.35 ? 'Premium' : 'Luxury';
   return { label, ratio };
 }
 
-export function priceFactor(s: GameState, elasticity: number): number {
-  const p = product(s);
-  const shipPenalty = s.offer.freeShipping ? 0 : CUSTOMER_SHIPPING_CHARGE * 1.3;
-  const perceived = effectivePrice(s) + shipPenalty;
-  const fatigue = s.offer.discountPct > 0 ? s.discountFatigue * 0.3 : s.discountFatigue;
-  return Math.pow(p.refPrice / perceived, elasticity) * (1 - fatigue);
+export function priceFactor(s: GameState, pid: string, elasticity: number, price = effectivePrice(s, pid), ch: ChannelId = 'store'): number {
+  const d = def(s, pid);
+  const brand = brandOf(s, pid);
+  const shipPenalty = ch === 'store' && !brand.freeShipping ? CUSTOMER_SHIPPING_CHARGE * 1.3 : 0;
+  const perceived = price + shipPenalty;
+  const fatigue = s.products[pid].discountPct > 0 ? s.discountFatigue * 0.3 : s.discountFatigue;
+  return Math.pow(d.refPrice / perceived, elasticity) * (1 - fatigue);
 }
 
-export function trendMult(s: GameState, day = s.day): number {
-  const t = product(s).trend;
-  if (t.kind === 'evergreen') return 1 + 0.05 * Math.sin(day / 9);
-  const x = (day - t.peakDay) / 9;
-  return day <= t.peakDay ? 0.7 + 1.3 * Math.exp(-x * x) : 0.3 + 1.7 * Math.exp(-x * x);
+export function trendMult(s: GameState, pid: string, day = s.day): number {
+  const t = def(s, pid).trend;
+  const season = demandSeason(day);
+  if (t.kind === 'evergreen') return (1 + 0.05 * Math.sin(day / 9)) * season;
+  if (t.kind === 'seasonal') {
+    const [a, b, mult] = t.season!;
+    const doy = dayOfYear(day);
+    return (doy >= a && doy <= b ? mult : 0.85) * season;
+  }
+  const peak = t.peakDay ?? 30;
+  const x = (day - peak) / 9;
+  return (day <= peak ? 0.7 + 1.3 * Math.exp(-x * x) : 0.25 + 1.75 * Math.exp(-x * x)) * season;
 }
 
-export function siteCVR(s: GameState, aud: AudienceDef | null, cvrBoost = 1): number {
-  const p = product(s);
+/** Copycat sellers steal a share of every shopper who would have bought. */
+export function copycatMult(s: GameState, pid: string): number {
+  return 1 - s.products[pid].copycat;
+}
+
+export function siteCVR(s: GameState, pid: string, aud: AudienceDef | null, cvrBoost = 1): number {
+  const d = def(s, pid);
   const elasticity = aud ? aud.elasticity : 1.35;
   const fit = aud ? aud.cvrFit : 0.95;
-  return p.baseCVR * trust(s) * priceFactor(s, elasticity) * reviewFactor(s) * fit * cvrBoost;
+  const exclusive = d.exclusive ? 1.1 : 1;
+  return d.baseCVR * trust(s, pid) * priceFactor(s, pid, elasticity) * reviewFactor(s, pid) * fit * cvrBoost * exclusive * copycatMult(s, pid);
 }
 
 export interface CellForecast {
@@ -199,58 +303,244 @@ export interface CellForecast {
   cpa: number;
 }
 
-export function cellForecast(s: GameState, cell: AdCell): CellForecast {
-  const p = product(s);
-  const aud = p.audiences.find((a) => a.id === cell.audienceId)!;
-  const cre = p.creatives.find((c) => c.id === cell.creativeId)!;
-  const cpm = aud.cpm * p.cpmMult * Math.sqrt(1 + cell.budget / 300);
+export function cellForecast(s: GameState, pid: string, cell: AdCell): CellForecast {
+  const d = def(s, pid);
+  const auds = audiences(s, pid);
+  const idx = Math.max(0, auds.findIndex((a) => a.id === cell.audienceId));
+  const aud = auds[idx];
+  const cre = CREATIVES[cell.creative];
+  const reach = 1 + intlFactor(s);
+  const competition = 0.55 + d.bars.competition * 0.15;
+  const cpm = aud.cpm * competition * cpmSeason(s.day) * (1 + Math.pow(cell.budget / (aud.scale * reach), 1.15) * 0.6);
   const fatigue = Math.max(0.6, 1 - 0.012 * Math.max(0, cell.daysActive - 5));
-  const ctr = cre.ctr * (cre.fit[aud.id] ?? 1) * fatigue * Math.min(1.6, trendMult(s));
+  const marketer = s.team.marketer.count > 0 ? 1.1 : 1;
+  const doy = dayOfYear(s.day);
+  const resolution = cell.audienceId === 'fresh' && doy >= 300 && doy <= 345 ? 1.4 : 1;
+  const ctr = cre.ctr * cre.fit[idx] * fatigue * marketer * Math.min(1.8, trendMult(s, pid)) * resolution;
   const cpc = cpm / (1000 * ctr);
-  const cvr = siteCVR(s, aud, cre.cvrBoost);
+  const cvr = siteCVR(s, pid, aud, cre.cvrBoost);
   return { cpm, ctr, cpc, cvr, cpa: cpc / cvr };
 }
 
-export function creativeUnlocked(s: GameState, creativeId: string): boolean {
-  const cre = product(s).creatives.find((c) => c.id === creativeId);
-  return !cre?.requiresReviews || s.reviews.length >= cre.requiresReviews;
+export function creativeUnlocked(s: GameState, pid: string, creative: AdCell['creative']): boolean {
+  const c = CREATIVES[creative];
+  if (c.needsReviews && s.products[pid].reviews.count < c.needsReviews) return false;
+  if (c.needsUgc && !s.products[pid].ugc) return false;
+  return true;
 }
 
-/** Recent CPA for a cell using the last `days` days of results. */
-export function recentCPA(cell: AdCell, days = 3): { spend: number; orders: number; cpa: number | null } {
+export function recentCPA(cell: { history: { spend: number; orders: number }[] }, days = 5): { spend: number; orders: number; cpa: number | null } {
   const recent = cell.history.slice(-days);
   const spend = recent.reduce((a, d) => a + d.spend, 0);
   const orders = recent.reduce((a, d) => a + d.orders, 0);
   return { spend, orders, cpa: orders ? spend / orders : null };
 }
 
+export function searchForecast(s: GameState, pid: string) {
+  const d = def(s, pid);
+  const cpc = (0.6 + 0.25 * d.bars.competition) * cpmSeason(s.day);
+  const maxClicks = d.searchVolume * trendMult(s, pid) * (1 + intlFactor(s)) * copycatMult(s, pid);
+  const cvr = siteCVR(s, pid, null) * 1.6;
+  return { cpc, maxClicks, cvr, cpa: cpc / cvr };
+}
+
+// ───────────────────────────── international ─────────────────────────────
+
+/** Extra demand from foreign markets. Without a local warehouse, slow shipping halves conversion. */
+export function intlFactor(s: GameState): number {
+  let f = 0;
+  for (const id of REGION_ORDER) {
+    const r = s.regions[id];
+    if (r?.entered) f += REGIONS[id].demand * (r.warehouse ? 1 : 0.55);
+  }
+  return f;
+}
+
+export function intlShare(s: GameState): number {
+  const f = intlFactor(s);
+  return f / (1 + f);
+}
+
+/** Average extra cost (shipping, duty, local handling) of one international order. */
+export function intlExtraCost(s: GameState, pid: string): number {
+  const d = def(s, pid);
+  let weighted = 0;
+  let total = 0;
+  for (const id of REGION_ORDER) {
+    const r = s.regions[id];
+    if (!r?.entered) continue;
+    const reg = REGIONS[id];
+    const w = reg.demand * (r.warehouse ? 1 : 0.55);
+    const ship = r.warehouse ? d.shipToCustomer * 0.1 + 2.5 : d.shipToCustomer * (reg.shipMult - 1);
+    weighted += w * (ship + landedUnitCost(s, pid) * reg.duty);
+    total += w;
+  }
+  return total ? weighted / total : 0;
+}
+
+// ───────────────────────────── operations ─────────────────────────────
+
 export function hoursLeft(s: GameState): number {
   return Math.max(0, FOUNDER_HOURS + s.extraHours - s.hoursUsed);
 }
 
-export function avgDailyUnits(s: GameState, days = 5): number {
-  const recent = s.history.slice(-days);
-  if (!recent.length) return 0;
-  return (recent.reduce((a, d) => a + d.orders, 0) / recent.length) * unitsPerOrder(s);
+export function moraleMult(m: number): number {
+  return 0.7 + (0.5 * m) / 100;
 }
 
-export function stockDays(s: GameState): number | null {
-  const daily = avgDailyUnits(s);
+export function storageCapacity(s: GameState): number {
+  if (s.thirdParty) return Infinity;
+  const racks = s.layout.cells.filter((c) => c === 'rack').length;
+  return SPACES[s.space].storage + racks * RACK_STORAGE;
+}
+
+export function storageUsed(s: GameState): number {
+  return Object.keys(s.products).reduce((a, id) => a + s.products[id].inventory.onHand * def(s, id).size, 0);
+}
+
+/** Per-station packing efficiency, best first. Close to racks, near the dock and on a conveyor is best. */
+export function stationEfficiencies(s: GameState): number[] {
+  if (s.space === 'apartment') return [];
+  if (s.space === 'garage') return [1, 1, 1];
+  const { w, h, cells } = s.layout;
+  const racks: [number, number][] = [];
+  const conveyors = new Set<number>();
+  cells.forEach((c, i) => {
+    if (c === 'rack') racks.push([i % w, Math.floor(i / w)]);
+    if (c === 'conveyor') conveyors.add(i);
+  });
+  const dock = [Math.floor(w / 2), h - 1];
+  const out: number[] = [];
+  cells.forEach((c, i) => {
+    if (c !== 'station') return;
+    const x = i % w;
+    const y = Math.floor(i / w);
+    out.push(stationEfficiency(x, y, w, racks, conveyors, dock));
+  });
+  return out.sort((a, b) => b - a);
+}
+
+export function stationEfficiency(x: number, y: number, w: number, racks: [number, number][], conveyors: Set<number>, dock: number[]): number {
+  const near = racks.length ? Math.min(...racks.map(([rx, ry]) => Math.abs(rx - x) + Math.abs(ry - y))) : 12;
+  const toDock = Math.abs(dock[0] - x) + Math.abs(dock[1] - y);
+  const i = y * w + x;
+  const neighbors = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w];
+  const conveyor = neighbors.some((n) => n >= 0 && conveyors.has(n));
+  return Math.max(0.6, 1.15 - 0.05 * Math.max(0, near - 1) - 0.01 * toDock + (conveyor ? 0.25 : 0));
+}
+
+export interface Capacity {
+  founder: number;
+  team: number;
+  robots: number;
+  total: number;
+  stations: number;
+  usedStations: number;
+  thirdParty: boolean;
+}
+
+export function fulfillmentCapacity(s: GameState): Capacity {
+  const thirdParty = s.thirdParty;
+  const founder = !thirdParty && s.stage <= 2 && s.batchPacking ? Math.floor(hoursLeft(s) / HOURS.handPack) : 0;
+  const effs = stationEfficiencies(s);
+  const packers = s.team.packer.count;
+  const shifts = s.team.lead.count > 0 ? s.shifts : 1;
+  const leadCover = packers ? Math.min(1, (s.team.lead.count * 15) / packers) : 0;
+  const rate =
+    PACKER_RATE *
+    moraleMult(s.team.packer.morale) *
+    (1 + 0.15 * leadCover) *
+    (s.automation.labelPrinter ? 1.1 : 1) *
+    (s.automation.scanners ? 1.1 : 1) *
+    (storageUsed(s) > storageCapacity(s) ? 0.85 : 1);
+  let remaining = packers;
+  let team = 0;
+  let used = 0;
+  for (let sh = 0; sh < shifts; sh++) {
+    for (const e of effs) {
+      if (remaining <= 0) break;
+      team += e * rate;
+      remaining--;
+      used++;
+    }
+  }
+  const robots = s.layout.cells.filter((c) => c === 'robot').length * 110;
+  const total = thirdParty ? Infinity : founder + team + robots;
+  return { founder, team: Math.round(team), robots, total, stations: effs.length, usedStations: Math.min(used, effs.length), thirdParty };
+}
+
+export function supportCapacity(s: GameState): number {
+  const t = s.team.support;
+  return Math.round(t.count * SUPPORT_RATE * moraleMult(t.morale) * (s.support.tone === 'personal' ? 0.7 : 1));
+}
+
+export function headcount(s: GameState): number {
+  return ROLE_ORDER.reduce((a, r) => a + s.team[r].count, 0);
+}
+
+export function seatsUsed(s: GameState, seat: 'floor' | 'office'): number {
+  return ROLE_ORDER.filter((r) => ROLES[r].seat === seat).reduce((a, r) => a + s.team[r].count, 0);
+}
+
+export function payrollMonthly(s: GameState): number {
+  return ROLE_ORDER.reduce((a, r) => a + s.team[r].count * ROLES[r].wage * BENEFITS * s.team[r].wageMult * (r === 'packer' && s.shifts === 2 ? 1.08 : 1), 0);
+}
+
+// ───────────────────────────── sales stats ─────────────────────────────
+
+export function avgDailyOrders(s: GameState, pid: string, days = 7): number {
+  const d = s.products[pid].daily.slice(-days);
+  return d.length ? d.reduce((a, x) => a + x, 0) / d.length : 0;
+}
+
+export function stockDays(s: GameState, pid: string): number | null {
+  const daily = avgDailyOrders(s, pid, 5) * unitsPerOrder(s, pid);
   if (daily <= 0) return null;
-  return s.inventory.onHand / daily;
+  return s.products[pid].inventory.onHand / daily;
 }
 
-export function incomingUnits(s: GameState): number {
-  return s.pos.filter((p) => p.status !== 'arrived').reduce((a, p) => a + p.qty, 0);
+export function emptyPL(): Record<PLCategory, number> {
+  return { revenue: 0, refunds: 0, cogs: 0, fulfillment: 0, fees: 0, ads: 0, payroll: 0, rent: 0, other: 0, interest: 0 };
 }
 
-export function nextPayoutDay(s: GameState): number {
-  return Math.ceil((s.day + 1) / PAYOUT_EVERY) * PAYOUT_EVERY;
+export function profitOf(pl: Record<PLCategory, number>): number {
+  return pl.revenue - pl.refunds - pl.cogs - pl.fulfillment - pl.fees - pl.ads - pl.payroll - pl.rent - pl.other - pl.interest;
 }
 
-export function dailyAdBudget(s: GameState): number {
-  return Object.values(s.ads).reduce((a, c) => a + (c.active ? c.budget : 0), 0);
+export function trailing(s: GameState, days: number) {
+  const recent = s.history.slice(-days);
+  const pl = emptyPL();
+  let orders = 0;
+  let repeat = 0;
+  const channel: Partial<Record<ChannelId, number>> = {};
+  for (const r of recent) {
+    for (const k of Object.keys(pl) as PLCategory[]) pl[k] += r.pl[k];
+    orders += r.orders;
+    repeat += r.repeatOrders;
+    for (const [ch, v] of Object.entries(r.channelRevenue)) channel[ch as ChannelId] = (channel[ch as ChannelId] ?? 0) + (v ?? 0);
+  }
+  return { pl, profit: profitOf(pl), revenue: pl.revenue, orders, repeat, channel, days: recent.length };
 }
+
+export function brandTrailing(s: GameState, brandId: number, days: number) {
+  let revenue = 0;
+  let cost = 0;
+  for (const r of s.history.slice(-days)) {
+    revenue += r.brandRevenue[brandId] ?? 0;
+    cost += r.brandCost[brandId] ?? 0;
+  }
+  return { revenue, profit: revenue - cost };
+}
+
+export function marketShare(s: GameState, cat: CategoryId): number {
+  const market = CATEGORIES[cat].marketSize * (1 + intlFactor(s));
+  const mine = liveProducts(s)
+    .filter((id) => def(s, id).category === cat)
+    .reduce((a, id) => a + avgDailyOrders(s, id, 7), 0);
+  return mine / market;
+}
+
+// ───────────────────────────── cash ─────────────────────────────
 
 export interface CashPools {
   cash: number;
@@ -258,46 +548,63 @@ export interface CashPools {
   transit: number;
   shelf: number;
   payouts: number;
+  receivables: number;
 }
 
 export function cashPools(s: GameState): CashPools {
-  const sum = (status: string) =>
-    s.pos.filter((p) => p.status === status).reduce((a, p) => a + p.totalCost, 0);
+  const sum = (status: string) => s.pos.filter((p) => p.status === status).reduce((a, p) => a + p.totalCost, 0);
   return {
     cash: s.cash,
     production: sum('production'),
     transit: sum('transit'),
-    shelf: s.inventory.costTotal,
-    payouts: s.payoutAccrued,
+    shelf: Object.values(s.products).reduce((a, p) => a + p.inventory.costTotal, 0),
+    payouts: Object.values(s.channelAccrued).reduce((a, v) => a + (v ?? 0), 0),
+    receivables: s.receivables.reduce((a, r) => a + r.amount, 0),
   };
 }
 
+export function dailyAdBudget(s: GameState, pid?: string): number {
+  const ids = pid ? [pid] : liveProducts(s);
+  return ids.reduce((a, id) => {
+    const p = s.products[id];
+    return (
+      a +
+      Object.values(p.ads).reduce((x, c) => x + (c.active ? c.budget : 0), 0) +
+      (p.search.active ? p.search.budget : 0) +
+      Object.values(p.listings).reduce((x, l) => x + (l?.active ? l.sponsored : 0), 0)
+    );
+  }, 0);
+}
+
 /**
- * Rough 30-day cash projection: today's cash, plus payouts from recent sales while
- * stock lasts, minus fulfillment, ads and known bills. Good enough to warn, not to audit.
+ * Rough 30-day cash projection from the last week's averages: what comes in from sales and receivables,
+ * minus fulfillment, ads, payroll, bills and supplier balances. Good enough to warn, not to audit.
  */
 export function runwayProjection(s: GameState, days = 30): number[] {
-  const recent = s.history.slice(-5);
-  const avgOrders = recent.length ? recent.reduce((a, d) => a + d.orders, 0) / recent.length : 0;
-  const ads = dailyAdBudget(s);
-  let stock = s.inventory.onHand;
+  const t = trailing(s, 7);
+  const n = Math.max(1, t.days);
+  const netIn = (t.pl.revenue - t.pl.refunds - t.pl.fees) / n;
+  const variable = (t.pl.fulfillment + t.pl.ads) / n;
+  const payrollDaily = payrollMonthly(s) / 30;
   let cash = s.cash;
-  let accrued = s.payoutAccrued;
   const out: number[] = [];
+  let stockUnits = Object.values(s.products).reduce((a, p) => a + p.inventory.onHand, 0);
+  const dailyUnits = Object.keys(s.products).reduce((a, id) => a + avgDailyOrders(s, id, 7) * unitsPerOrder(s, id), 0);
   for (let d = 1; d <= days; d++) {
     const day = s.day + d;
-    for (const po of s.pos) if (po.status !== 'arrived' && po.arrivesDay === day) stock += po.qty;
-    const units = Math.min(stock, avgOrders * unitsPerOrder(s));
-    stock -= units;
-    const orders = units / unitsPerOrder(s);
-    const fulfil = orders * (product(s).shipToCustomer + PACKAGING_COST[s.offer.packaging]);
-    accrued += orders * averageOrderValue(s) * (1 - PAYMENT_FEE_PCT);
-    cash -= fulfil + (orders > 0 || stock > 0 ? ads : 0);
-    if (day % PAYOUT_EVERY === 0) {
-      cash += accrued;
-      accrued = 0;
+    for (const po of s.pos) {
+      if (po.status === 'arrived') continue;
+      if (po.arrivesDay === day) stockUnits += po.qty;
+      if (po.productionDoneDay === day && po.balanceDue) cash -= po.balanceDue;
     }
-    for (const b of s.bills) if (b.dueDay === day) cash -= b.amount;
+    const selling = stockUnits > 0;
+    stockUnits = Math.max(0, stockUnits - dailyUnits);
+    cash += (selling ? netIn : 0) - variable * (selling ? 1 : 0.6) - payrollDaily;
+    for (const b of s.bills) {
+      const due = b.dueDay === day || (!!b.everyDays && day > b.dueDay && (day - b.dueDay) % b.everyDays === 0);
+      if (due && b.category !== 'payroll') cash -= b.amount;
+    }
+    for (const r of s.receivables) if (r.dueDay === day) cash += r.amount;
     if (s.loan && s.loan.dueDay === day) cash -= s.loan.amount;
     out.push(Math.round(cash));
   }
