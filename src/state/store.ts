@@ -3,34 +3,53 @@ import * as E from '../sim/engine';
 import type { GameState } from '../sim/types';
 import { sfx } from './sound';
 
-export type TabId = 'trends' | 'source' | 'store' | 'offer' | 'ads' | 'orders' | 'cash' | 'wall';
+export type TabId =
+  | 'products'
+  | 'source'
+  | 'store'
+  | 'offer'
+  | 'ads'
+  | 'channels'
+  | 'ops'
+  | 'team'
+  | 'inbox'
+  | 'customers'
+  | 'finance'
+  | 'company'
+  | 'wall';
+
 export type Modal =
-  | { kind: 'unbox'; supplierId: string }
-  | { kind: 'photo' }
-  | { kind: 'pack'; orderId: number }
+  | { kind: 'unbox'; productId: string; supplierId: string }
+  | { kind: 'photo'; productId: string }
+  | { kind: 'pack' }
   | { kind: 'milestone'; text: string }
+  | { kind: 'report' }
   | null;
 
+export type Speed = 0 | 1 | 2 | 4 | 8;
+
 export const DAY_MS = 20000;
-const SAVE_KEY = 'unboxed-save-v1';
+const SAVE_KEY = 'unboxed-save-v2';
 
 interface UIState {
   game: GameState;
-  speed: 0 | 1 | 2 | 4;
-  /** Progress through the current day, 0..1, for clocks and animations. */
+  speed: Speed;
   dayProgress: number;
   tab: TabId;
+  product: string | null;
+  brand: number;
   modal: Modal;
   toast: string | null;
   muted: boolean;
   seenNotice: number;
-  /** Milestones waiting for the current modal to close. */
-  queued: string[];
+  queued: Modal[];
   act: <A extends unknown[]>(fn: (s: GameState, ...args: A) => E.ActionResult | void, ...args: A) => E.ActionResult;
   tick: (ms: number) => void;
-  setSpeed: (speed: 0 | 1 | 2 | 4) => void;
+  setSpeed: (speed: Speed) => void;
   skip: () => void;
   setTab: (tab: TabId) => void;
+  setProduct: (pid: string) => void;
+  setBrand: (id: number) => void;
   setModal: (m: Modal) => void;
   clearToast: () => void;
   toggleMute: () => void;
@@ -42,7 +61,7 @@ function load(): GameState | null {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as GameState;
-    return s.version === 1 ? s : null;
+    return s.version === 2 ? s : null;
   } catch {
     return null;
   }
@@ -56,33 +75,26 @@ function save(s: GameState) {
   }
 }
 
-/** Apply day-advance side effects shared by ticking and skipping. */
-function afterAdvance(prev: GameState, next: GameState, get: () => UIState, set: (p: Partial<UIState>) => void) {
-  const fresh = next.notices.filter((n) => n.id > get().seenNotice);
-  const pause = fresh.some((n) => n.pause) || E.isBlocked(next);
-  const milestones = fresh.filter((n) => n.kind === 'milestone').map((n) => n.text);
-  if (!get().muted) {
-    if (milestones.length) sfx.fanfare();
-    else if (next.lastDayOrders > 0) sfx.orders(Math.min(next.lastDayOrders, 8));
+/** Turn fresh notices into modals (milestones, month reports), queueing them if something is open. */
+function modalsFor(state: UIState, next: GameState): Partial<UIState> {
+  const fresh = next.notices.filter((n) => n.id > state.seenNotice);
+  const wanted: Modal[] = [];
+  for (const n of fresh) {
+    const quiet = n.text === E.MILESTONE_LABELS.first_profitable_reorder || n.text === 'Ambition achieved!';
+    if (n.kind === 'milestone' && !quiet) wanted.push({ kind: 'milestone', text: n.text });
+    if (n.text.startsWith('📊 Month') && n.pause) wanted.push({ kind: 'report' });
   }
-  set({
-    game: next,
-    seenNotice: next.notices.length ? next.notices[next.notices.length - 1].id : get().seenNotice,
-    speed: pause ? 0 : get().speed,
-    ...showMilestones(get(), milestones),
-  });
-  if (next.day !== prev.day) save(next);
+  const seen = next.notices.length ? next.notices[next.notices.length - 1].id : state.seenNotice;
+  if (!wanted.length) return { seenNotice: seen };
+  if (!state.muted && wanted.some((m) => m?.kind === 'milestone')) sfx.fanfare();
+  const queue = [...state.queued, ...wanted];
+  if (state.modal) return { queued: queue, seenNotice: seen };
+  const [first, ...rest] = queue;
+  return { modal: first, queued: rest, seenNotice: seen };
 }
 
-/** Show the first new milestone now if nothing else is open; queue the rest. */
-function showMilestones(state: UIState, texts: string[]): Partial<UIState> {
-  // The win gets its own end-of-run screen instead of a polaroid popup.
-  texts = texts.filter((t) => t !== E.MILESTONE_LABELS.first_profitable_reorder);
-  if (!texts.length) return {};
-  const queue = [...state.queued, ...texts];
-  if (state.modal) return { queued: queue };
-  const [first, ...rest] = queue;
-  return { modal: { kind: 'milestone', text: first }, queued: rest };
+function firstLive(s: GameState): string | null {
+  return s.productOrder.find((id) => s.products[id] && !s.products[id].retired) ?? null;
 }
 
 const initial = load() ?? E.createGame();
@@ -91,7 +103,9 @@ export const useGame = create<UIState>((set, get) => ({
   game: initial,
   speed: 0,
   dayProgress: 0,
-  tab: 'trends',
+  tab: 'products',
+  product: firstLive(initial),
+  brand: initial.brands[0].id,
   modal: null,
   toast: null,
   muted: false,
@@ -99,21 +113,15 @@ export const useGame = create<UIState>((set, get) => ({
   queued: [],
 
   act: (fn, ...args) => {
-    const prev = get().game;
-    const s = structuredClone(prev);
+    const s = structuredClone(get().game);
     const res = fn(s, ...args) ?? null;
     if (res) {
       set({ toast: res });
       return res;
     }
-    const fresh = s.notices.filter((n) => n.id > get().seenNotice);
-    const milestones = fresh.filter((n) => n.kind === 'milestone').map((n) => n.text);
-    if (milestones.length && !get().muted) sfx.fanfare();
-    set({
-      game: s,
-      seenNotice: s.notices.length ? s.notices[s.notices.length - 1].id : get().seenNotice,
-      ...showMilestones(get(), milestones),
-    });
+    const current = get().product;
+    const product = current && s.products[current] && !s.products[current].retired ? current : firstLive(s);
+    set({ game: s, product, ...modalsFor(get(), s) });
     save(s);
     return null;
   },
@@ -128,8 +136,7 @@ export const useGame = create<UIState>((set, get) => ({
     }
     const next = structuredClone(game);
     E.advanceDay(next);
-    set({ dayProgress: 0 });
-    afterAdvance(game, next, get, set);
+    advanced(game, next);
   },
 
   setSpeed: (speed) => set({ speed }),
@@ -138,16 +145,17 @@ export const useGame = create<UIState>((set, get) => ({
     const game = get().game;
     const next = structuredClone(game);
     E.skipToNextEvent(next);
-    set({ dayProgress: 0 });
-    afterAdvance(game, next, get, set);
+    advanced(game, next);
   },
 
   setTab: (tab) => set({ tab }),
+  setProduct: (product) => set({ product }),
+  setBrand: (brand) => set({ brand }),
   setModal: (modal) => {
     const { queued } = get();
     if (!modal && queued.length) {
       const [first, ...rest] = queued;
-      set({ modal: { kind: 'milestone', text: first }, queued: rest });
+      set({ modal: first, queued: rest });
     } else set({ modal });
   },
   clearToast: () => set({ toast: null }),
@@ -155,6 +163,16 @@ export const useGame = create<UIState>((set, get) => ({
   newGame: () => {
     const g = E.createGame();
     save(g);
-    set({ game: g, speed: 0, dayProgress: 0, tab: 'trends', modal: null, seenNotice: 0, queued: [] });
+    set({ game: g, speed: 0, dayProgress: 0, tab: 'products', modal: null, seenNotice: 0, queued: [], product: null, brand: g.brands[0].id });
   },
 }));
+
+function advanced(prev: GameState, next: GameState) {
+  const state = useGame.getState();
+  const fresh = next.notices.filter((n) => n.id > state.seenNotice);
+  const pause = fresh.some((n) => n.pause) || E.isBlocked(next);
+  if (!state.muted && next.lastDayOrders > 0 && !fresh.some((n) => n.kind === 'milestone')) sfx.orders(Math.min(next.lastDayOrders, 8));
+  const product = state.product && next.products[state.product] && !next.products[state.product].retired ? state.product : firstLive(next);
+  useGame.setState({ game: next, product, dayProgress: 0, speed: pause ? 0 : state.speed, ...modalsFor(state, next) });
+  if (next.day !== prev.day) save(next);
+}

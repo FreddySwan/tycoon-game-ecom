@@ -1,30 +1,21 @@
-import { MILESTONE_LABELS } from '../../sim/engine';
+import { MILESTONE_LABELS, MILESTONE_PICS } from '../../sim/engine';
 import type { MilestoneId } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle } from '../bits';
 
-export const PICS: Record<MilestoneId, string> = {
-  first_sample: '📦',
-  store_launched: '🚀',
-  first_sale: '🔔',
-  first_profitable_campaign: '🏆',
-  first_five_star: '⭐',
-  first_repeat: '💌',
-  batch_packing: '🧰',
-  first_profitable_reorder: '🎉',
-};
-
 export function Wall() {
   const game = useGame((s) => s.game);
+  const ids = Object.keys(MILESTONE_LABELS) as MilestoneId[];
+  const done = ids.filter((id) => game.milestones[id]).length;
   return (
     <div>
-      <AppTitle app="Corkboard" title="Milestones" sub="Every polaroid moves with you when the business grows." />
+      <AppTitle app="Corkboard" title="Milestones" sub={`${done} of ${ids.length} polaroids. They move with you every time the business grows.`} />
       <div className="cork">
-        {(Object.keys(MILESTONE_LABELS) as MilestoneId[]).map((id) => {
+        {ids.map((id) => {
           const day = game.milestones[id];
           return (
             <div key={id} className={`polaroid ${day ? '' : 'empty'}`} style={{ transform: `rotate(${((id.length * 7) % 9) - 4}deg)` }}>
-              <div className="pic">{day ? PICS[id] : '?'}</div>
+              <div className="pic">{day ? MILESTONE_PICS[id] : '?'}</div>
               {MILESTONE_LABELS[id]}
               <div className="tiny muted">{day ? `Day ${day}` : 'Not yet'}</div>
             </div>

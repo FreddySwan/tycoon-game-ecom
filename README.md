@@ -1,44 +1,71 @@
 # Unboxed
 
-An e-commerce tycoon game: launch one product from a tiny apartment and reach your first profitable reorder.
-Design doc: [docs/GAME_CONCEPT.md](docs/GAME_CONCEPT.md). This build is the §9 prototype.
+An e-commerce tycoon game: start with a laptop, $4,000 and a cat in a studio apartment, and grow into a warehouse,
+a multichannel retailer and an international company. Or stay small and beloved. Design doc: [docs/GAME_CONCEPT.md](docs/GAME_CONCEPT.md).
 
 ## Run
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # balance tests (scripted bot players)
+npm test           # balance bots play full games; determinism check
 npm run build      # typecheck + production build to dist/
 ```
 
+## What's in the game
+
+| Stage | Space | New decisions |
+|---|---|---|
+| 1. Apartment startup | Studio apartment | Pick products (up to 3), samples & negotiation, ShopBloc store, photo shoots, pricing, Scrollr ads, hand packing → batch packing, Seekly search ads. First goal: a profitable reorder. |
+| 2. Growing brand | Garage unit | Hiring (packers, support, marketer), email list & flows & campaigns, LoopShop + creator collabs, branded packaging, reorder alerts, credit line, 3PL option. |
+| 3. Warehouse | Small warehouse | Warehouse layout editor (racks, stations, conveyors), buyer + automatic reorders, warehouse lead and second shift, MegaFab volume factory, automation. |
+| 4. Multichannel | Branded HQ | Bazaarly / Crafthaus / FlashCart listings, rank, Express fulfillment, lightning deals, sponsored listings, wholesale accounts, supplier contracts, Product Lab (exclusive products). |
+| 5. Established | Campus | International markets with local warehouses, multiple brands, robot pickers. |
+
+Moving up is always optional and costs a deposit plus higher rent. **Ambitions** (from stage 2): Beloved Brand,
+Retail Giant, Category King, Portfolio Builder.
+
+**Events** come with warning signs and choices: port delays, quality drift, viral spikes, the holiday ad-cost surge,
+copycats, Bazaarly fee hikes, return waves, staff poaching, supplier price rises, payment reserves, wholesale
+inquiries, creator DMs, Big Bazaarly Days. Running out of cash gives you options (family loan, bridge loan,
+liquidation) before the business closes.
+
+**Money model:** a daily P&L (revenue, refunds, product cost, shipping, fees, ads, payroll, rent, other, interest)
+with monthly reports, separate from cash. Payouts arrive per channel on their own schedules, suppliers can offer
+30/70 terms, wholesale pays net-30. The Cash River shows where money is locked up.
+
 ## Stack
 
-- **TypeScript + Vite + React 18** for the laptop-style app panels (most of the gameplay).
-- **PixiJS 8** for the isometric apartment diorama.
-- **Zustand** for UI state, wrapping a **pure TypeScript simulation** (no UI imports) tested with **Vitest**.
-- Art: [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit) isometric renders (CC0) in `public/assets/furniture/`.
-  Room shell, cat and founder are drawn in code.
+- **TypeScript + Vite + React 18** for the laptop apps.
+- **PixiJS 8** dioramas: `src/scene/Apartment.ts` (stage 1) and `src/scene/LayoutScene.ts` (garage → campus, drawn
+  from the player's warehouse layout, staff counts and stock levels).
+- **Zustand** store around a **pure TypeScript simulation** tested with **Vitest**.
+- Art: [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit) (CC0) plus shapes drawn in code.
 
 ## Layout
 
 ```
-src/sim/        Simulation: data, economics formulas, daily tick, player actions, bots
-  data.ts         Products, suppliers, store modules, tuning constants
-  economics.ts    Derived numbers: margins, break-even CPA, trust, conversion, cash pools
-  engine.ts       createGame, advanceDay, and every player action (mutates a draft state)
-  bots.ts         Scripted good/naive players for balance tests
-src/state/      Zustand store (game loop, autosave to localStorage, milestone queue) + WebAudio sfx
-src/scene/      PixiJS apartment diorama (boxes stack with stock, parcels fly out, cat, day/night window)
-src/ui/         React: HUD, laptop apps (Trends, SourceMart, ShopBloc, Offer, Scrollr, Orders, Cash, Wall), modals
+src/sim/
+  data/          catalog (11 products, 5 categories), suppliers, channels, regions, roles, spaces, stages, constants
+  economics.ts   derived numbers: margins, break-even CPA, trust, conversion, capacity, P&L rollups, projections
+  progress.ts    stage requirements and ambition checks
+  calendar.ts    dates, holiday season, Big Bazaarly Days
+  engine/        core (state, ledger), sourcing, storefront, marketing, ops, reviews, company, events, tick
+  bots.ts        scripted players used by tests and the dev console
+src/state/       Zustand store (game loop, autosave, modal queue) + WebAudio sfx
+src/scene/       PixiJS dioramas
+src/ui/          HUD, laptop apps (src/ui/apps), modals, goals
 ```
 
-Every engine action takes a `GameState` draft and returns an error string or `null`. The store clones the state,
-runs the action, and shows any error as a toast. Saves are plain JSON of `GameState`.
+Orders are simulated as daily aggregates (buckets per product and channel), so the game stays fast with
+thousands of orders a day. Every engine action takes a cloned `GameState` and returns an error string or `null`.
 
-## Balancing
+## Dev tools
 
-`npm test` runs 12 "thoughtful" and 8 "naive" bot players. The thoughtful bot should reach a profitable reorder;
-the naive bot (all ads on, weak store) should bleed cash. Tuning lives in `src/sim/data.ts`.
+In dev builds the console has `__store`, `__engine` and `__bots`. Jump to any point of a game:
 
-In dev, `window.__store` and `window.__engine` are exposed for console playtesting.
+```js
+const { s } = __bots.runBot(1000, 300); __store.setState({ game: s, modal: null });
+```
+
+Run `BOT_LOG=1 npm test` to print the reference bot's month-by-month numbers.

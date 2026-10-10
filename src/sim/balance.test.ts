@@ -5,7 +5,7 @@ describe('balance', () => {
   it('a thoughtful player climbs the stages', () => {
     const lines: string[] = [];
     const first = fullBot(1000, 720, (l) => lines.push(l));
-    if (process.env.BOT_LOG) console.log(lines.join('\n'));
+    if ((globalThis as { process?: { env: Record<string, string> } }).process?.env.BOT_LOG) console.log(lines.join('\n'));
     const results = [first, ...Array.from({ length: 5 }, (_, i) => fullBot(1001 + i, 720))];
     console.table(results.map((r) => ({ ...r, stageDays: JSON.stringify(r.stageDays) })));
     expect(results.filter((r) => r.winDay !== null).length).toBeGreaterThanOrEqual(5);

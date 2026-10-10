@@ -20,7 +20,7 @@ export function Feed() {
     <div className="feed">
       {[...notices]
         .reverse()
-        .slice(0, 12)
+        .slice(0, 14)
         .map((n) => (
           <div key={n.id}>
             <span className="day">D{n.day}</span>

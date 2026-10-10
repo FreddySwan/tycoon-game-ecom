@@ -891,3 +891,139 @@ table.data td {
     transform: translateY(110vh) rotate(720deg);
   }
 }
+
+/* ───────── v2 additions ───────── */
+.picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  align-items: center;
+}
+.picker button {
+  background: #fff;
+  border: 1.5px solid var(--line);
+  padding: 5px 10px;
+  font-size: 13px;
+  position: relative;
+}
+.picker button.on {
+  border-color: var(--accent);
+  background: #fff3e6;
+}
+.picker .dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--bad);
+}
+.layout {
+  display: grid;
+  gap: 2px;
+  background: #cfcac2;
+  padding: 4px;
+  border-radius: 10px;
+  max-width: 640px;
+}
+.layout .tile {
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 4px;
+  background: #ece9e3;
+  font-size: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.layout .tile small {
+  font-size: 8px;
+  font-weight: 800;
+  opacity: 0.7;
+}
+.layout .tile.rack {
+  background: #f5d2b3;
+}
+.layout .tile.conveyor {
+  background: #c9ccd3;
+}
+.layout .tile.robot {
+  background: #c5ecd9;
+}
+.layout .tile.dock {
+  background: #ffe9a8;
+  cursor: default;
+}
+.layout .tile:hover:not(.dock) {
+  outline: 2px solid var(--accent);
+}
+.stages {
+  display: flex;
+  gap: 4px;
+}
+.stage {
+  flex: 1;
+  background: var(--paper-2);
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stage b {
+  font-size: 18px;
+}
+.stage.done {
+  background: var(--good-bg);
+}
+.stage.now {
+  background: var(--accent);
+  color: #fff;
+}
+.menu {
+  position: absolute;
+  right: 0;
+  top: 110%;
+  background: var(--paper);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  z-index: 40;
+}
+.menu button {
+  background: transparent !important;
+  color: var(--ink) !important;
+  white-space: nowrap;
+}
+.hist {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--line);
+}
+.hist span {
+  display: block;
+  height: 100%;
+}
+select,
+input[type='number'] {
+  font: inherit;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1.5px solid var(--line);
+  background: #fff;
+}
+.screen a {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+.screen a:hover {
+  color: var(--accent-ink);
+}

@@ -282,7 +282,7 @@ export class ApartmentScene {
     this.time += dt;
 
     // Stock boxes
-    const boxCount = Math.min(Math.ceil(game.inventory.onHand / UNITS_PER_BOX), BOX_CAPACITY);
+    const boxCount = Math.min(Math.ceil(Object.values(game.products).reduce((a, p) => a + p.inventory.onHand, 0) / UNITS_PER_BOX), BOX_CAPACITY);
     if (boxCount !== this.shownBoxes) {
       // Growing stock drops new boxes in from above; shrinking just removes them.
       const keep = Math.min(boxCount, this.shownBoxes);
