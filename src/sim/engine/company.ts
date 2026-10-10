@@ -14,12 +14,13 @@ export function moveCost(stage: StageId): number {
   return SPACES[STAGE_SPACE[stage]].deposit;
 }
 
-export function advanceStage(s: GameState): ActionResult {
+/** Move up a stage. `force` (admin mode) skips the requirements and the deposit. */
+export function advanceStage(s: GameState, force = false): ActionResult {
   const next = (s.stage + 1) as StageId;
   if (s.stage >= 5) return 'You’re already an established company.';
-  if (!stageReady(s, next)) return 'Not ready yet. Check the requirements in the Company app.';
+  if (!force && !stageReady(s, next)) return 'Not ready yet. Check the requirements in the Company app.';
   const space = SPACES[STAGE_SPACE[next]];
-  const err = spendCash(s, space.deposit);
+  const err = force ? null : spendCash(s, space.deposit);
   if (err) return err;
   s.stage = next;
   s.space = space.id;

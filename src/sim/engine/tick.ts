@@ -42,6 +42,7 @@ import { marketerPass } from './marketing';
 import { leadPass, shipFromBucket } from './ops';
 import { expireCards, processDeliveries, processTickets } from './reviews';
 import { revealDue, runReorders, settleContracts } from './sourcing';
+import { adminTopUp } from './admin';
 import { onStore } from './storefront';
 
 export function isBlocked(s: GameState): boolean {
@@ -590,6 +591,7 @@ function monthReport(s: GameState): void {
 // ───────────────────────────── the day ─────────────────────────────
 
 export function advanceDay(s: GameState): void {
+  adminTopUp(s);
   if (isBlocked(s)) return;
 
   endOfDayFulfillment(s);

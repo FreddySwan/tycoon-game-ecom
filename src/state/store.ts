@@ -33,6 +33,16 @@ export type Speed = 0 | 1 | 2 | 4 | 8;
 
 export const DAY_MS = 20000;
 const SAVE_KEY = 'unboxed-save-v2';
+const ADMIN_KEY = 'unboxed-admin';
+
+function adminOnLoad(): boolean {
+  try {
+    if (new URLSearchParams(location.search).has('admin')) localStorage.setItem(ADMIN_KEY, '1');
+    return localStorage.getItem(ADMIN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 interface UIState {
   game: GameState;
@@ -46,6 +56,8 @@ interface UIState {
   muted: boolean;
   seenNotice: number;
   queued: Modal[];
+  /** Testing cheats panel. */
+  admin: boolean;
   act: <A extends unknown[]>(fn: (s: GameState, ...args: A) => E.ActionResult | void, ...args: A) => E.ActionResult;
   tick: (ms: number) => void;
   setSpeed: (speed: Speed) => void;
@@ -57,6 +69,9 @@ interface UIState {
   clearToast: () => void;
   toggleMute: () => void;
   newGame: () => void;
+  toggleAdmin: () => void;
+  /** Swap in a whole new game state (admin stage jumps). */
+  replaceGame: (g: GameState) => void;
 }
 
 function load(): GameState | null {
@@ -114,10 +129,12 @@ export const useGame = create<UIState>((set, get) => ({
   muted: false,
   seenNotice: initial.notices.length ? initial.notices[initial.notices.length - 1].id : 0,
   queued: [],
+  admin: adminOnLoad(),
 
   act: (fn, ...args) => {
     const s = structuredClone(get().game);
     const res = fn(s, ...args) ?? null;
+    E.adminTopUp(s);
     if (res) {
       set({ toast: res });
       return res;
@@ -167,6 +184,23 @@ export const useGame = create<UIState>((set, get) => ({
     const g = E.createGame();
     save(g);
     set({ game: g, speed: 0, dayProgress: 0, tab: 'products', modal: null, seenNotice: 0, queued: [], product: null, brand: g.brands[0].id });
+  },
+  toggleAdmin: () => {
+    const admin = !get().admin;
+    try {
+      if (admin) localStorage.setItem(ADMIN_KEY, '1');
+      else localStorage.removeItem(ADMIN_KEY);
+    } catch {
+      /* no storage: admin lasts this session */
+    }
+    set({ admin });
+  },
+  replaceGame: (g) => {
+    const old = get().game.flags;
+    for (const f of ['adminCash', 'adminHours']) if (old[f]) g.flags[f] = true;
+    E.adminTopUp(g);
+    save(g);
+    set({ game: g, speed: 0, dayProgress: 0, modal: null, queued: [], seenNotice: g.notices.length ? g.notices[g.notices.length - 1].id : 0, product: firstLive(g), brand: g.brands[0].id });
   },
 }));
 

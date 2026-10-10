@@ -1,5 +1,6 @@
 import { Diorama, useGameLoop } from './Diorama';
 import { Hud } from './Hud';
+import { AdminPanel } from './AdminPanel';
 import { Laptop } from './Laptop';
 import { Modals, Toast } from './Modals';
 import { Feed, GoalNote } from './SidePanel';
@@ -21,6 +22,7 @@ export function App() {
           <Laptop />
         </section>
       </main>
+      <AdminPanel />
       <Modals />
       <Toast />
     </div>

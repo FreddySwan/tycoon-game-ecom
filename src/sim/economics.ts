@@ -429,6 +429,7 @@ export function intlExtraCost(s: GameState, pid: string): number {
 // ───────────────────────────── operations ─────────────────────────────
 
 export function hoursLeft(s: GameState): number {
+  if (s.flags.adminHours) return FOUNDER_HOURS + s.extraHours;
   return Math.max(0, FOUNDER_HOURS + s.extraHours - s.hoursUsed);
 }
 

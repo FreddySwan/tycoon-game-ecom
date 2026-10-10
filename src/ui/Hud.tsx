@@ -23,6 +23,8 @@ export function Hud() {
   const muted = useGame((s) => s.muted);
   const toggleMute = useGame((s) => s.toggleMute);
   const newGame = useGame((s) => s.newGame);
+  const admin = useGame((s) => s.admin);
+  const toggleAdmin = useGame((s) => s.toggleAdmin);
   const [menu, setMenu] = useState(false);
   const hours = hoursLeft(game);
   const maxHours = FOUNDER_HOURS + game.extraHours;
@@ -98,6 +100,14 @@ export function Hud() {
                 }}
               >
                 New game
+              </button>
+              <button
+                onClick={() => {
+                  setMenu(false);
+                  toggleAdmin();
+                }}
+              >
+                🛠 {admin ? 'Hide admin mode' : 'Admin mode (testing)'}
               </button>
             </div>
           )}

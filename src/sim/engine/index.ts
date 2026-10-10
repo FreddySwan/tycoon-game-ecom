@@ -7,3 +7,4 @@ export * from './reviews';
 export * from './company';
 export * from './events';
 export * from './tick';
+export * from './admin';

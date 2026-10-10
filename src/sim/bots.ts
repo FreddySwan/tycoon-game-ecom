@@ -277,7 +277,7 @@ export function fullBot(seed: number, days = 720, log?: (line: string) => void):
 }
 
 /** Play a whole game with the scripted player and hand back the final state (dev tool + tests). */
-export function runBot(seed: number, days = 720, log?: (line: string) => void, start?: GameState): { s: GameState; result: BotResult } {
+export function runBot(seed: number, days = 720, log?: (line: string) => void, start?: GameState, until?: (s: GameState) => boolean): { s: GameState; result: BotResult } {
   const s = start ?? E.createGame(seed);
   const fresh = !start;
   const stageDays: Partial<Record<StageId, number>> = { 1: 1 };
@@ -291,7 +291,7 @@ export function runBot(seed: number, days = 720, log?: (line: string) => void, s
     s.flags.winSeen = true;
   }
   let winDay: number | null = null;
-  while (s.day < days && s.status === 'playing') {
+  while (s.day < days && s.status === 'playing' && !until?.(s)) {
     for (const smp of s.samples) if (smp.arrived && !smp.inspected) E.inspectSample(s, smp.productId, smp.supplierId);
     for (const pid of liveProducts(s)) {
       if (!s.samples.some((x) => x.productId === pid) && s.stage === 1) E.orderSample(s, pid, 'brightway');

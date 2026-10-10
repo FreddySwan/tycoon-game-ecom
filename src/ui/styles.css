@@ -1475,3 +1475,46 @@ table.pl .caret {
   border-color: #f0a860;
   background: #fff4e6;
 }
+
+/* ───────── admin mode ───────── */
+.admin-panel {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  width: 300px;
+  z-index: 60;
+  background: #2b2433;
+  color: #f4eee6;
+  border: 2px solid #f0a860;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  display: grid;
+  gap: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.admin-panel .muted {
+  color: #b9adc4;
+}
+.admin-panel button.ghost {
+  color: #f4eee6;
+}
+.admin-sec {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #f0a860;
+}
+.admin-fab {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  z-index: 60;
+  border-radius: 999px;
+  width: 42px;
+  height: 42px;
+  background: #2b2433 !important;
+  border: 2px solid #f0a860;
+}

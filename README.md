@@ -66,6 +66,10 @@ liquidation) before the business closes.
   forecast that models each channel's payout day; a "Money on its way" table with each payout's date and amount.
 - *Ads:* a checkbox (on by default) stops Scrollr and Seekly spend on out-of-stock products until stock arrives.
 
+**Admin mode (testing):** open the game with `?admin` or pick "Admin mode" in the ☰ menu. The panel offers unlimited
+cash (never below $1M; not booked to the P&L), unlimited founder hours, +1/7/30/90 day skips, reveal all products,
+jump to any stage with a bot-simulated business (`src/sim/admin.ts`), or force-unlock stages on the current save.
+
 **Money model:** a daily P&L (revenue, refunds, product cost, shipping, fees, ads, payroll, rent, other, interest)
 with monthly reports, separate from cash. Payouts arrive per channel on their own schedules, suppliers can offer
 30/70 terms, wholesale pays net-30. The Cash River shows where money is locked up.
