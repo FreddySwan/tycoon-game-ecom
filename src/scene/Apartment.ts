@@ -107,6 +107,8 @@ export class ApartmentScene {
   private pendingPopups: number[] = [];
   private time = 0;
   private destroyed = false;
+  /** Set when the GPU context is lost; the host remounts the scene. */
+  lost = false;
   private ready = false;
 
   async init(host: HTMLElement): Promise<void> {
@@ -116,6 +118,7 @@ export class ApartmentScene {
       return;
     }
     host.appendChild(this.app.canvas);
+    this.app.canvas.addEventListener('webglcontextlost', () => (this.lost = true));
     const names = new Set([...FURNITURE, RUG, CHAIR, LAPTOP].map((p) => p.tex));
     names.add('cardboardBoxClosed_SE');
     names.add('cardboardBoxOpen_SE');
@@ -124,7 +127,11 @@ export class ApartmentScene {
         this.tex[n] = await Assets.load(`${BASE}${n}.png`);
       }),
     );
-    if (this.destroyed) return;
+    // Replaced while loading: shut this renderer down and take its canvas with it.
+    if (this.destroyed) {
+      this.app.destroy(true);
+      return;
+    }
     this.build();
     this.ready = true;
     this.app.stage.addChild(this.world);

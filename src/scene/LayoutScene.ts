@@ -102,6 +102,8 @@ export class LayoutScene {
   private screenPos = { x: 0, y: 0 };
   private ready = false;
   private destroyed = false;
+  /** Set when the GPU context is lost; the host remounts the scene. */
+  lost = false;
 
   async init(host: HTMLElement): Promise<void> {
     await this.app.init({ backgroundAlpha: 0, antialias: true, resizeTo: host, autoDensity: true, resolution: window.devicePixelRatio || 1 });
@@ -110,13 +112,18 @@ export class LayoutScene {
       return;
     }
     host.appendChild(this.app.canvas);
+    this.app.canvas.addEventListener('webglcontextlost', () => (this.lost = true));
     const names = ['table_SE', 'desk_SE', 'computerScreen_SE', 'chairDesk_SW', 'laptop_SE', 'radio_SE', 'pottedPlant_SE', 'cardboardBoxClosed_SE', 'kitchenCoffeeMachine_SE', 'loungeSofa_SW', 'plantSmall1_SE'];
     await Promise.all(
       names.map(async (n) => {
         this.tex[n] = await Assets.load(`${BASE}${n}.png`);
       }),
     );
-    if (this.destroyed) return;
+    // Replaced while loading: shut this renderer down and take its canvas with it.
+    if (this.destroyed) {
+      this.app.destroy(true);
+      return;
+    }
     this.world.sortableChildren = true;
     this.staticLayer.sortableChildren = true;
     this.dynamic.sortableChildren = true;

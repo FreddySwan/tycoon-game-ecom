@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { GameState } from '../sim/types';
 import { type TabId, useGame } from '../state/store';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Ads } from './apps/Ads';
 import { Channels } from './apps/Channels';
 import { Company } from './apps/Company';
@@ -64,7 +65,9 @@ export function Laptop() {
           </button>
         ))}
       </nav>
-      <div className="screen">{active.render()}</div>
+      <div className="screen">
+        <ErrorBoundary resetKey={active.id}>{active.render()}</ErrorBoundary>
+      </div>
     </div>
   );
 }

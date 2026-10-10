@@ -15,7 +15,12 @@ export interface Goal {
 export function currentGoal(s: GameState): Goal {
   const ids = liveProducts(s);
   const pid = ids[0];
-  if (!pid) return { title: 'Find a product to sell', hint: 'Open the Trend Scanner and pick one of three products.', tab: 'products' };
+  if (!pid) {
+    const researched = Object.keys(s.research).length;
+    if (researched < 2) return { title: 'Research products', hint: 'Quick-scan a few products in different niches in the Trend Scanner (1 founder hour each).', tab: 'products' };
+    if (s.shortlist.length < 2) return { title: 'Build a shortlist', hint: 'Deep-dive the promising ones and ☆ shortlist 2–5 to compare side by side.', tab: 'products' };
+    return { title: 'Pick your first product', hint: 'Compare your shortlist and commit. Your first product is the big decision.', tab: 'products' };
+  }
   if (!s.samples.length) return { title: 'Order samples', hint: 'Get samples from suppliers on SourceMart and compare them yourself.', tab: 'source' };
   if (s.samples.some((x) => x.arrived && !x.inspected)) return { title: 'Unbox your samples', hint: 'Your samples are here. Inspect them on SourceMart.', tab: 'source' };
   if (!s.samples.some((x) => x.arrived)) return { title: 'Samples are on the way', hint: 'Skip ahead, or name your brand in ShopBloc while you wait.', tab: 'store' };

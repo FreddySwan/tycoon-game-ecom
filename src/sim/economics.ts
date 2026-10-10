@@ -137,6 +137,7 @@ export interface OrderBreakdown {
   shipping: number;
   packaging: number;
   cogs: number;
+  thirdParty: number;
   contribution: number;
 }
 
@@ -150,7 +151,8 @@ export function orderBreakdown(s: GameState, pid: string, bundle: boolean, ch: C
   const c = CHANNELS[ch];
   const program = !own && !!s.products[pid].listings[ch]?.program && !!c.program;
   const fees = charged * channelFee(s, ch) + c.feeFlat + (program ? c.program!.feePerUnit * units : 0);
-  const shipping = program ? 0 : d.shipToCustomer * (bundle ? 1.25 : 1) + (s.thirdParty ? THIRD_PARTY.perOrder : 0);
+  const shipping = program ? 0 : d.shipToCustomer * (bundle ? 1.25 : 1);
+  const thirdParty = program || !s.thirdParty ? 0 : THIRD_PARTY.perOrder;
   const packaging = program ? 0 : PACKAGING_COST[brand.packaging] + (brand.thankYouCard ? THANK_YOU_COST : 0);
   const cogs = landedUnitCost(s, pid) * units;
   return {
@@ -159,7 +161,8 @@ export function orderBreakdown(s: GameState, pid: string, bundle: boolean, ch: C
     shipping: round2(shipping),
     packaging: round2(packaging),
     cogs: round2(cogs),
-    contribution: round2(charged - fees - shipping - packaging - cogs),
+    thirdParty: round2(thirdParty),
+    contribution: round2(charged - fees - shipping - thirdParty - packaging - cogs),
   };
 }
 

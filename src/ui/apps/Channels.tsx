@@ -1,9 +1,10 @@
 import { CHANNELS, CHANNEL_ORDER } from '../../sim/data';
-import { channelFee, def, liveProducts, trailing } from '../../sim/economics';
+import { channelFee, channelTrailing, def, liveProducts, trailing } from '../../sim/economics';
+import { SliceTable } from '../SliceTable';
 import { joinChannel, listingProblem, runPromo, setListing } from '../../sim/engine';
 import type { ChannelId } from '../../sim/types';
 import { useGame } from '../../state/store';
-import { AppTitle } from '../bits';
+import { AppTitle, NumberInput } from '../bits';
 import { money, pct } from '../format';
 
 export function Channels() {
@@ -52,6 +53,13 @@ export function Channels() {
           );
         })}
       </div>
+
+      <h3>Channel performance (30 days)</h3>
+      <SliceTable
+        showThirdParty={game.thirdParty}
+        rows={(Object.entries(channelTrailing(game, 30)) as [ChannelId, NonNullable<ReturnType<typeof channelTrailing>[ChannelId]>][]).sort((a, b) => b[1].revenue - a[1].revenue).map(([ch, x]) => ({ key: ch, label: `${CHANNELS[ch].emoji} ${CHANNELS[ch].name}`, x }))}
+      />
+      <p className="tiny muted">Ads per channel: Scrollr & Seekly count toward your store, creator posts toward LoopShop (if listed) or your store, sponsored listings toward their marketplace.</p>
 
       {chans.some((ch) => game.channels[ch]?.joined) && (
         <>
@@ -113,10 +121,7 @@ export function Channels() {
         <label className="row tiny" style={{ gap: 6 }}>
           <input type="checkbox" checked={!!l?.active} onChange={(e) => act(setListing, pid, ch, { active: e.target.checked })} />
           {l?.active ? (
-            <>
-              $
-              <input type="number" style={{ width: 64 }} value={l.price} step={1} onChange={(e) => act(setListing, pid, ch, { price: +e.target.value })} />
-            </>
+            <NumberInput value={l.price} prefix="$" step={1} min={1} width={52} onChange={(v) => act(setListing, pid, ch, { price: v })} />
           ) : (
             <span className="muted">{problem ?? 'Not listed'}</span>
           )}
@@ -130,8 +135,8 @@ export function Channels() {
               </label>
             )}
             <div className="row" style={{ gap: 4, marginTop: 2 }}>
-              Ads $
-              <input type="number" style={{ width: 56 }} value={l.sponsored} step={10} min={0} onChange={(e) => act(setListing, pid, ch, { sponsored: +e.target.value })} />
+              Ads
+              <NumberInput value={l.sponsored} prefix="$" step={10} min={0} width={52} onChange={(v) => act(setListing, pid, ch, { sponsored: v })} />
               <button className="small ghost" disabled={l.promoCooldown > game.day} onClick={() => act(runPromo, pid, ch)} title="20% off for 3 days, big traffic boost">
                 {l.promoUntil >= game.day ? '⚡ live' : '⚡ Deal'}
               </button>

@@ -1,10 +1,11 @@
-import { Diorama } from './Diorama';
+import { Diorama, useGameLoop } from './Diorama';
 import { Hud } from './Hud';
 import { Laptop } from './Laptop';
 import { Modals, Toast } from './Modals';
 import { Feed, GoalNote } from './SidePanel';
 
 export function App() {
+  useGameLoop();
   return (
     <div className="app">
       <Hud />

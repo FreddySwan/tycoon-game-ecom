@@ -1,5 +1,6 @@
 import { def, liveProducts, stockDays } from '../sim/economics';
 import { useGame } from '../state/store';
+import { ProductImage } from './photos';
 
 export function ProductPicker({ note }: { note?: string }) {
   const game = useGame((s) => s.game);
@@ -22,7 +23,7 @@ export function ProductPicker({ note }: { note?: string }) {
         const warn = p.sold > 0 && (p.inventory.onHand === 0 || (sd !== null && sd < 7));
         return (
           <button key={id} className={id === product ? 'on' : ''} onClick={() => setProduct(id)} title={d.name}>
-            <span>{d.emoji}</span> {d.name.length > 18 ? d.name.slice(0, 17) + '…' : d.name}
+            <ProductImage game={game} pid={id} size={22} round={5} /> {d.name.length > 18 ? d.name.slice(0, 17) + '…' : d.name}
             {warn && <span className="dot" title="Low stock" />}
           </button>
         );

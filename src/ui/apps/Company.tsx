@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AMBITIONS, CATEGORIES, REGIONS, REGION_ORDER, SPACES, STAGES, STAGE_SPACE } from '../../sim/data';
-import { brandTrailing, def, intlFactor, liveProducts, marketShare } from '../../sim/economics';
+import { brandTrailing, def, intlFactor, liveProducts, marketShare, trailing } from '../../sim/economics';
 import { advanceStage, chooseAmbition, createBrand, enterRegion, labCost, labDays, openRegionalWarehouse, startLab } from '../../sim/engine';
 import { ambitionChecks, stageChecks } from '../../sim/progress';
 import type { AmbitionId, CategoryId, StageId } from '../../sim/types';
@@ -49,6 +49,18 @@ export function Company() {
             </div>
           ))}
           <p className="tiny">Unlocks: {STAGES[next].unlocks.join(' · ')}</p>
+          {(() => {
+            const cur = SPACES[game.space];
+            const after = game.cash - space.deposit;
+            const monthly = trailing(game, 30);
+            const fixedNow = monthly.pl.payroll + monthly.pl.rent;
+            return (
+              <p className={`callout ${after < (space.rent + fixedNow) ? 'warn' : ''}`}>
+                After the deposit you’d have <b>{money(after)}</b> in the bank. Rent goes from {money(cur.rent)} to <b>{money(space.rent)}/month</b> (payroll + rent now {money(fixedNow)}/month).
+                {after < space.rent + fixedNow && ' That’s less than a month of fixed costs: consider waiting, or have your credit line ready.'}
+              </p>
+            );
+          })()}
           <button className="primary" disabled={!ready} onClick={() => act(advanceStage)}>
             🚚 Move to the {space.name.toLowerCase()} ({money(space.deposit)})
           </button>

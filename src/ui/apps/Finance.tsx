@@ -1,5 +1,11 @@
 import { dateLabel } from '../../sim/calendar';
-import { cashPools, payrollMonthly, profitOf, runwayProjection, trailing } from '../../sim/economics';
+import { useState } from 'react';
+import { CHANNELS } from '../../sim/data';
+import { cashPools, channelTrailing, def, payrollMonthly, productTrailing, profitOf, runwayProjection, trailing } from '../../sim/economics';
+import type { ChannelId } from '../../sim/types';
+import { Options } from '../bits';
+import { ProductImage } from '../photos';
+import { SliceTable } from '../SliceTable';
 import { drawCredit, repayCredit } from '../../sim/engine';
 import type { PLCategory } from '../../sim/types';
 import { useGame } from '../../state/store';
@@ -52,6 +58,10 @@ export function Finance() {
   const rolling = trailing(game, 30);
   const reports = game.reports.slice(-4);
   const credit = game.credit;
+  const [days, setDays] = useState(30);
+  const byProduct = productTrailing(game, days);
+  const byChannel = channelTrailing(game, days);
+  const anyThirdParty = Object.values(byProduct).some((x) => x.thirdParty > 0);
 
   return (
     <div>
@@ -84,6 +94,16 @@ export function Finance() {
           <b>{money(pools.payouts + pools.receivables)}</b>
           {pools.receivables > 0 ? `incl. ${money(pools.receivables)} invoices` : 'from channels'}
         </div>
+        {pools.payables > 0 && (
+          <>
+            <span className="arrow">·</span>
+            <div className="pool locked">
+              🧾 Owed to suppliers
+              <b>{money(pools.payables)}</b>
+              balances & net-30
+            </div>
+          </>
+        )}
       </div>
       <p className="tiny muted">Only the green pool pays for ads, payroll, rent and reorders. Money in orange pools is real, but it’s locked up in stock.</p>
 
@@ -168,6 +188,24 @@ export function Finance() {
         </tbody>
       </table>
       <p className="tiny muted">Profit counts product cost when an item sells, not when you pay the factory. That’s why profit and cash rarely match.</p>
+
+      <div className="row between" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>Profit by product</h3>
+        <Options value={days} options={[{ v: 7, label: '7 days' }, { v: 30, label: '30 days' }, { v: 90, label: '90 days' }]} onChange={setDays} />
+      </div>
+      <SliceTable
+        showThirdParty={anyThirdParty}
+        rows={Object.entries(byProduct)
+          .filter(([pid]) => game.products[pid])
+          .sort((a, b) => b[1].revenue - a[1].revenue)
+          .map(([pid, x]) => ({ key: pid, label: <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}><ProductImage game={game} pid={pid} size={26} round={6} /> {def(game, pid).name}</span>, x }))}
+      />
+      <h3>Profit by channel</h3>
+      <SliceTable
+        showThirdParty={anyThirdParty}
+        rows={(Object.entries(byChannel) as [ChannelId, NonNullable<(typeof byChannel)[ChannelId]>][]).sort((a, b) => b[1].revenue - a[1].revenue).map(([ch, x]) => ({ key: ch, label: `${CHANNELS[ch].emoji} ${CHANNELS[ch].name}`, x }))}
+      />
+      <p className="tiny muted">Profit here is contribution: revenue minus product cost, shipping & packing (incl. 3PL fees), payment/marketplace fees, ads and refunds. Payroll, rent and overhead are shared costs and not split by product.</p>
 
       <h3>Upcoming bills</h3>
       <table className="data">

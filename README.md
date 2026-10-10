@@ -30,6 +30,18 @@ copycats, Bazaarly fee hikes, return waves, staff poaching, supplier price rises
 inquiries, creator DMs, Big Bazaarly Days. Running out of cash gives you options (family loan, bridge loan,
 liquidation) before the business closes.
 
+**Player tools added in the feedback round:**
+- *Product research board:* quick scans (1h) and deep dives (2h) reveal demand, competition, margins, a 60-day
+  trend forecast and customer insights; shortlist up to 5 and compare side by side before picking.
+- *Photo shoot:* drag to frame the product, zoom, pick backdrop, light, prop and angle. Composition counts.
+- *Creative studio:* every ad format has a photo, hook and button; hooks land differently with each audience;
+  phone-mockup previews. Creator posts show up as a feed with their results.
+- *Ad manager rules:* your growth marketer scales ads that beat break-even by your margin target (+20%/day),
+  pauses ads above break-even, launches tests, and keeps total spend under a % of revenue you set.
+- *Warehouse lead autopilot:* hires/lets go of packers to match demand, starts a 2nd shift, builds stations and racks.
+- *Analytics:* profit by product and by channel (incl. 3PL fees), ad performance by source and product,
+  order pace by product and channel, a stock & restock table with days of cover, net-30 supplier terms.
+
 **Money model:** a daily P&L (revenue, refunds, product cost, shipping, fees, ads, payroll, rent, other, interest)
 with monthly reports, separate from cash. Payouts arrive per channel on their own schedules, suppliers can offer
 30/70 terms, wholesale pays net-30. The Cash River shows where money is locked up.
@@ -41,6 +53,8 @@ with monthly reports, separate from cash. Payouts arrive per channel on their ow
   from the player's warehouse layout, staff counts and stock levels).
 - **Zustand** store around a **pure TypeScript simulation** tested with **Vitest**.
 - Art: [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit) (CC0) plus shapes drawn in code.
+- Product photos: Creative Commons photos found via [Openverse](https://openverse.org) (CC0 / CC BY / public domain),
+  in `public/assets/products/` with attribution in `src/ui/photo-credits.json` (shown on the Wall screen).
 
 ## Layout
 

@@ -1,4 +1,4 @@
-import { CUSTOMER_SHIPPING_CHARGE, DAMAGE_RATE, PACKAGING_COST } from '../../sim/data';
+import { CUSTOMER_SHIPPING_CHARGE, DAMAGE_RATE, PACKAGING_COST, THIRD_PARTY } from '../../sim/data';
 import { brandOf, breakEvenCPA, bundlePrice, def, orderBreakdown, perception, returnRate, siteCVR } from '../../sim/economics';
 import { setBrandOps, setOffer } from '../../sim/engine';
 import type { Packaging } from '../../sim/types';
@@ -78,9 +78,15 @@ export function OfferApp() {
               <span>−{money(single.cogs, true)}</span>
             </div>
             <div className="line">
-              <span>Shipping{game.thirdParty ? ' + 3PL fee' : ''}</span>
+              <span>Shipping to customer</span>
               <span>−{money(single.shipping, true)}</span>
             </div>
+            {single.thirdParty > 0 && (
+              <div className="line">
+                <span>3PL handling</span>
+                <span>−{money(single.thirdParty, true)}</span>
+              </div>
+            )}
             <div className="line">
               <span>Packaging</span>
               <span>−{money(single.packaging, true)}</span>
@@ -94,6 +100,13 @@ export function OfferApp() {
               <span className={single.contribution > 0 ? 'good-text' : 'bad-text'}>{money(single.contribution, true)}</span>
             </div>
           </div>
+          {game.stage >= 2 && (
+            <p className="tiny muted" style={{ marginTop: 6 }}>
+              {game.thirdParty
+                ? `Without the 3PL you'd keep ${money(single.contribution + single.thirdParty, true)} per order, but you'd need packers and stations.`
+                : `With a 3PL you'd keep ${money(single.contribution - THIRD_PARTY.perOrder, true)} per order (${money(THIRD_PARTY.perOrder, true)} handling fee), with no packing limits.`}
+            </p>
+          )}
           <div className="callout good" style={{ marginTop: 12 }}>
             <b>Break-even ad cost: {money(be, true)} per order</b>
             <div className="tiny">{p.bundle ? 'Blended with bundles. ' : ''}If ads cost more than this to win one order, you lose money on it.</div>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AIR_DAYS, INSPECTION_COST, SAMPLE_COST, SEA_DAYS, STARTING_CASH, SUPPLIERS, SUPPLIER_ORDER, WIN_REORDER_QTY } from '../../sim/data';
-import { activeContract, avgDailyOrders, def, freightPerUnit, listPrice, stockDays, unitsPerOrder } from '../../sim/economics';
+import { activeContract, avgDailyOrders, def, freightPerUnit, incomingUnits, listPrice, liveProducts, steadyDailyUnits, stockDays, unitsPerOrder } from '../../sim/economics';
 import {
   acceptCounter,
   canSignContract,
@@ -18,10 +18,12 @@ import {
   setReorderRule,
   signContract,
   startNegotiation,
+  termsLabel,
 } from '../../sim/engine';
 import type { Freight, SupplierId } from '../../sim/types';
 import { useGame } from '../../state/store';
-import { AppTitle, Meter, Options, Pips, Toggle } from '../bits';
+import { AppTitle, Meter, NumberInput, Options, Pips, Toggle } from '../bits';
+import { ProductImage } from '../photos';
 import { money } from '../format';
 import { ProductPicker, useProduct } from '../ProductPicker';
 
@@ -36,6 +38,7 @@ export function SourceMart() {
   return (
     <div>
       <AppTitle app="SourceMart" title="Suppliers" sub={`Factories that can make your products. Samples cost ${money(SAMPLE_COST)} and take 3 days.`} />
+      {game.pos.length > 0 && <StockTable />}
       <ProductPicker />
       {pid && (
         <>
@@ -69,7 +72,7 @@ export function SourceMart() {
                     <Meter value={game.relationship[id]} max={100} />
                   </div>
                   {contract && <span className="pill good">🤝 Contract: −{Math.round(contract.discount * 100)}%, {contract.orderedUnits.toLocaleString()}/{contract.commitUnits.toLocaleString()} units</span>}
-                  {hasPaymentTerms(game, id) && !contract && <span className="pill good">30/70 payment terms</span>}
+                  {hasPaymentTerms(game, id) && !contract && <span className="pill good">{termsLabel(game, id)}</span>}
                   {game.stage <= 2 && !sample && (
                     <button onClick={() => act(orderSample, pid, id)} disabled={game.cash < SAMPLE_COST}>
                       Order sample ({money(SAMPLE_COST)})
@@ -100,6 +103,82 @@ export function SourceMart() {
 
       {game.pos.some((p) => p.status !== 'arrived') && <POTable />}
     </div>
+  );
+}
+
+function defaultSupplier(game: ReturnType<typeof useGame.getState>['game'], pid: string): SupplierId {
+  return game.products[pid].reorder.supplierId ?? [...game.pos].reverse().find((p) => p.productId === pid)?.supplierId ?? 'brightway';
+}
+
+/** Every product's runway at a glance, with a one-click restock. */
+function StockTable() {
+  const game = useGame((s) => s.game);
+  const act = useGame((s) => s.act);
+  const setProduct = useGame((s) => s.setProduct);
+  return (
+    <>
+      <h3 style={{ marginTop: 0 }}>📦 Stock & restock</h3>
+      <table className="data">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th className="num">On hand</th>
+            <th className="num">Incoming</th>
+            <th className="num">Sells / day</th>
+            <th className="num">Days left</th>
+            <th className="num">Incl. incoming</th>
+            <th className="num">Lead time</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {liveProducts(game).map((pid) => {
+            const p = game.products[pid];
+            const pace = steadyDailyUnits(game, pid);
+            const inc = incomingUnits(game, pid);
+            const left = pace > 0 ? p.inventory.onHand / pace : null;
+            const all = pace > 0 ? (p.inventory.onHand + inc) / pace : null;
+            const sup = defaultSupplier(game, pid);
+            const lead = { sea: leadTime(sup, 'sea', game), air: leadTime(sup, 'air', game) };
+            const urgent = all !== null && all < lead.sea;
+            const critical = all !== null && all < lead.air;
+            const qty = Math.max(SUPPLIERS[sup].moq, Math.round((pace * 45) / 100) * 100);
+            return (
+              <tr key={pid}>
+                <td>
+                  <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                    <ProductImage game={game} pid={pid} size={28} round={6} /> {def(game, pid).name}
+                  </span>
+                </td>
+                <td className="num">{p.inventory.onHand.toLocaleString()}</td>
+                <td className="num">{inc ? inc.toLocaleString() : '—'}</td>
+                <td className="num">{pace.toFixed(1)}</td>
+                <td className={`num ${left !== null && left < 7 ? 'bad-text' : ''}`}>{left === null ? '—' : Math.floor(left)}</td>
+                <td className={`num ${critical ? 'bad-text' : urgent ? 'warn-text' : 'good-text'}`}>
+                  <b>{all === null ? '—' : Math.floor(all)}</b>
+                </td>
+                <td className="num tiny">
+                  sea {lead.sea}d · air {lead.air}d
+                </td>
+                <td>
+                  <button
+                    className={`small ${urgent ? 'primary' : ''}`}
+                    title={`Opens an order with ${SUPPLIERS[sup].company} for ~45 days of stock`}
+                    onClick={() => {
+                      setProduct(pid);
+                      act(startNegotiation, pid, sup, qty);
+                    }}
+                  >
+                    Restock
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="tiny muted">Days use a smoothed pace (short spikes don’t count fully). Red: you’ll run out even by air. Orange: too late for sea freight.</p>
+    </>
   );
 }
 
@@ -176,6 +255,8 @@ function Negotiation() {
   const accrued = Object.values(game.channelAccrued).reduce((a, v) => a + (v ?? 0), 0);
   const winsAfter = game.cash + accrued - upfront;
   const eta = leadTime(n.supplierId, freight, game);
+  const pace = steadyDailyUnits(game, n.productId);
+  const lasts = (q: number) => (pace > 0 ? `≈ ${Math.round(q / pace)} days of sales at last week’s pace (${pace.toFixed(1)}/day)` : 'No sales history yet');
 
   return (
     <div className="chat" style={{ marginTop: 16 }}>
@@ -188,7 +269,11 @@ function Negotiation() {
         </button>
       </div>
       <p className="tiny muted">Quantity</p>
-      <Options value={n.qty} options={quantityOptions(n.supplierId).map((q) => ({ v: q, label: `${q.toLocaleString()} units` }))} onChange={(q) => act(startNegotiation, n.productId, n.supplierId, q)} />
+      <div className="row">
+        <Options value={n.qty} options={quantityOptions(n.supplierId).map((q) => ({ v: q, label: `${q.toLocaleString()}` }))} onChange={(q) => act(startNegotiation, n.productId, n.supplierId, q)} />
+        <NumberInput value={n.qty} step={100} min={sup.moq} width={80} onChange={(q) => act(startNegotiation, n.productId, n.supplierId, Math.max(sup.moq, Math.round(q)))} />
+        <span className="tiny">{lasts(n.qty)}</span>
+      </div>
       <p>
         <span className="bubble">{n.lastMessage}</span>
       </p>
@@ -245,14 +330,14 @@ function Negotiation() {
             </div>
             {terms && (
               <div className="line tiny">
-                <span>Payment terms: 30% now, 70% when it ships</span>
+                <span>Payment terms: {termsLabel(game, n.supplierId)}</span>
                 <span>{money(upfront)} today</span>
               </div>
             )}
           </div>
           {sd !== null && (
             <p className={`callout ${sd < eta ? 'warn' : ''}`} style={{ marginTop: 10 }}>
-              Current stock lasts about <b>{Math.floor(sd)} days</b>. This order arrives in <b>{eta} days</b>.{sd < eta && ' You may run out before it lands.'}
+              Current stock lasts about <b>{Math.floor(sd)} days</b>. This order arrives in <b>{eta} days</b> and then lasts <b>~{pace > 0 ? Math.round(n.qty / pace) : '?'} days</b>.{sd < eta && ' You may run out before it lands.'}
             </p>
           )}
           {isReorder && !game.milestones.first_profitable_reorder && (

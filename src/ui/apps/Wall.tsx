@@ -2,6 +2,7 @@ import { MILESTONE_LABELS, MILESTONE_PICS } from '../../sim/engine';
 import type { MilestoneId } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle } from '../bits';
+import { allCredits } from '../photos';
 
 export function Wall() {
   const game = useGame((s) => s.game);
@@ -22,6 +23,18 @@ export function Wall() {
           );
         })}
       </div>
+      <h3>Photo credits</h3>
+      <p className="tiny muted">Product photos are used under Creative Commons licenses, found via Openverse. Furniture art: Kenney (CC0).</p>
+      <ul className="tiny" style={{ columns: 2, paddingLeft: 16 }}>
+        {allCredits().map(({ pid, photo }) => (
+          <li key={photo.src}>
+            <a href={photo.url} target="_blank" rel="noreferrer">
+              “{photo.title}”
+            </a>{' '}
+            by {photo.creator || 'unknown'} ({photo.license}) · {pid}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AMBITIONS, STARTING_CASH, SUPPLIERS } from '../sim/data';
 import { averageRating, brandOf, def, profitOf } from '../sim/economics';
-import { handPack, inspectSample, MILESTONE_LABELS, MILESTONE_PICS, nextHandPack, resolveEvent, sampleNote, scorePhoto, setFlag, takePhoto } from '../sim/engine';
+import { compositionScore, handPack, inspectSample, MILESTONE_LABELS, MILESTONE_PICS, nextHandPack, resolveEvent, sampleNote, scorePhoto, setFlag, takePhoto } from '../sim/engine';
+import { ProductImage, ProductShot } from './photos';
 import type { MilestoneId, PhotoChoice, SupplierId } from '../sim/types';
 import { sfx } from '../state/sound';
 import { useGame } from '../state/store';
@@ -54,7 +55,7 @@ function Intro() {
         You just quit a job you didn’t love. You have a laptop, <b>{money(STARTING_CASH)}</b> in savings, a corner of a studio apartment, and a cat called Invoice.
       </p>
       <p>
-        First goal: launch one product and make your <b>first profitable reorder</b>. After that, the road runs from your kitchen table to a garage, a warehouse, an HQ, and maybe a global company. Or a small brand people love. Your call.
+        Start by researching products across niches, shortlist the best, and pick one. First goal: launch it and make your <b>first profitable reorder</b>. After that, the road runs from your kitchen table to a garage, a warehouse, an HQ, and maybe a global company. Or a small brand people love. Your call.
       </p>
       <p className="tiny muted">Rent is $900 every 30 days. Time only moves when you press ▶ or skip ahead.</p>
       <button className="primary" onClick={() => act(setFlag, 'introSeen')}>
@@ -90,7 +91,9 @@ function Unbox({ productId, supplierId }: { productId: string; supplierId: Suppl
           setDrag(e.clientX);
         }}
       >
-        <span style={{ display: 'inline-block', transform: `rotateY(${angle}deg) rotate(${angle / 8}deg)`, transition: drag === null ? 'transform 0.3s' : 'none' }}>{d.emoji}</span>
+        <span style={{ display: 'inline-block', transform: `rotateY(${angle}deg) rotate(${angle / 8}deg)`, transition: drag === null ? 'transform 0.3s' : 'none' }}>
+          <ProductImage game={game} pid={productId} size={140} round={12} style={{ filter: sup.quality < 0.7 ? 'saturate(0.6) contrast(0.9)' : sup.quality > 0.95 ? 'saturate(1.15) contrast(1.05)' : 'none' }} />
+        </span>
       </div>
       {!inspected ? (
         <button
@@ -125,35 +128,36 @@ function Unbox({ productId, supplierId }: { productId: string; supplierId: Suppl
   );
 }
 
-const BACKDROPS = { countertop: '#e9e4dc', floor: '#d9a874', sheet: '#ffffff' } as const;
-const LIGHT = { window: 'brightness(1.08) saturate(1.1)', lamp: 'brightness(0.8) sepia(0.35)', overhead: 'brightness(1.15) contrast(0.85)' } as const;
-
 function Photo({ productId }: { productId: string }) {
   const game = useGame((s) => s.game);
   const act = useGame((s) => s.act);
   const setModal = useGame((s) => s.setModal);
   const d = def(game, productId);
   const p = game.products[productId];
-  const [c, setC] = useState<PhotoChoice>(p.photo ?? { backdrop: 'sheet', light: 'overhead', prop: 'none', angle: 'top' });
+  const [c, setC] = useState<PhotoChoice>({ x: 0.5, y: 0.5, zoom: 1, ...(p.photo ?? { backdrop: 'sheet', light: 'overhead', prop: 'none', angle: 'top' }) });
   const [result, setResult] = useState<number | null>(null);
+  const [drag, setDrag] = useState(false);
+  const comp = compositionScore(c);
+
+  const move = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    setC((prev) => ({ ...prev, x: Math.min(0.9, Math.max(0.1, (e.clientX - r.left) / r.width)), y: Math.min(0.9, Math.max(0.1, (e.clientY - r.top) / r.height)) }));
+  };
 
   return (
-    <Shell onClose={() => setModal(null)}>
+    <Shell onClose={() => setModal(null)} wide>
       <h2>📸 Photo shoot: {d.name}</h2>
-      <p className="muted tiny">💡 {d.photoTip}</p>
-      <div
-        className="pack-stage"
-        style={{
-          background: c.backdrop === 'floor' ? 'repeating-linear-gradient(90deg,#d9a874 0 40px,#cf9b66 40px 42px)' : BACKDROPS[c.backdrop],
-          filter: LIGHT[c.light],
-          transform: c.angle === 'top' ? 'perspective(400px) rotateX(25deg)' : c.angle === 'eye' ? 'none' : 'perspective(400px) rotateX(10deg)',
-        }}
-      >
-        <span>{d.emoji}</span>
-        {c.prop === 'cat' && <span style={{ fontSize: 50 }}>🐈</span>}
-        {c.prop === 'accessory' && <span style={{ fontSize: 40 }}>✨</span>}
-        {c.light === 'lamp' && <span style={{ position: 'absolute', top: 10, right: 16, fontSize: 28 }}>💡</span>}
-        {c.light === 'window' && <span style={{ position: 'absolute', top: 10, left: 16, fontSize: 28 }}>🪟</span>}
+      <p className="muted tiny">💡 {d.photoTip} Drag the product to frame it, zoom with the slider. The grid shows the rule of thirds.</p>
+      <div className="shot-frame" onPointerDown={(e) => { setDrag(true); move(e); }} onPointerUp={() => setDrag(false)} onPointerLeave={() => setDrag(false)} onPointerMove={move}>
+        <ProductShot game={game} pid={productId} choice={c} height={260}>
+          <div className="thirds" />
+        </ProductShot>
+      </div>
+      <div className="row" style={{ margin: '8px 0' }}>
+        <span className="tiny">🔍 Zoom</span>
+        <input type="range" min={60} max={200} value={Math.round((c.zoom ?? 1) * 100)} onChange={(e) => setC((prev) => ({ ...prev, zoom: +e.target.value / 100 }))} style={{ maxWidth: 220 }} />
+        <span className={`pill ${comp > 0.65 ? 'good' : comp < 0.35 ? 'bad' : ''}`}>Composition {Math.round(comp * 100)}%</span>
       </div>
       <div style={{ display: 'grid', gap: 8 }}>
         <Options value={c.backdrop} options={[{ v: 'countertop', label: 'Countertop' }, { v: 'floor', label: 'Wooden floor' }, { v: 'sheet', label: 'White sheet' }]} onChange={(v) => setC((prev) => ({ ...prev, backdrop: v }))} />
@@ -164,7 +168,7 @@ function Photo({ productId }: { productId: string }) {
       {result !== null && (
         <p className={`callout ${result >= 4 ? 'good' : result <= 2 ? 'bad' : ''}`} style={{ marginTop: 12 }}>
           Shot quality: <b>{stars(result)}</b>
-          {result >= p.photoStars ? ' · Saved as the hero photo.' : ` · Your best is still ${stars(p.photoStars)}.`}
+          {result >= p.photoStars ? ' · Saved as the hero photo (used in your store and in ads that use “your photo”).' : ` · Your best is still ${stars(p.photoStars)}.`}
         </p>
       )}
       <div className="row" style={{ marginTop: 12 }}>
@@ -209,7 +213,8 @@ function Pack() {
     );
   }
   const d = def(game, order.productId);
-  const visual = step === 0 ? '🗞️' : step >= steps.length ? '📦✅' : steps[step - 1] === 'Add product' ? `📦${d.emoji}` : steps[step - 1] === 'Thank-you card' ? '📦💌' : steps[step - 1] === 'Tape it' ? '📦' : '📦';
+  const visual =
+    step === 0 ? '🗞️' : step >= steps.length ? '📦✅' : steps[step - 1] === 'Add product' ? <span className="row" style={{ gap: 10 }}>📦<ProductImage game={game} pid={order.productId} size={90} /></span> : steps[step - 1] === 'Thank-you card' ? '📦💌' : '📦';
 
   const advance = () => {
     if (step >= steps.length) return;

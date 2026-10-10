@@ -1,14 +1,19 @@
 import { useState } from 'react';
-import { BATCH_UNLOCK_AFTER, FRIEND_HELP, SPACES, THIRD_PARTY, TILE_COST } from '../../sim/data';
-import { def, fulfillmentCapacity, stationEfficiency, storageCapacity, storageUsed, supportCapacity } from '../../sim/economics';
-import { AUTOMATION, buyAutomation, callFriend, dockIndex, placeTile, setSupport, setThirdParty } from '../../sim/engine';
-import type { TileId } from '../../sim/types';
+import { BATCH_UNLOCK_AFTER, CHANNELS, FRIEND_HELP, PACKAGING_COST, PACKER_RATE, RACK_STORAGE, ROLES, SPACES, THIRD_PARTY, TILE_COST } from '../../sim/data';
+import { channelTrailing, def, fulfillmentCapacity, liveProducts, orderPace, payrollMonthly, productTrailing, stationEfficiency, storageCapacity, storageUsed, supportCapacity } from '../../sim/economics';
+import { AUTOMATION, buyAutomation, callFriend, dockIndex, packersNeeded, placeTile, setAutopilot, setSupport, setThirdParty } from '../../sim/engine';
+import type { ChannelId, TileId } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle, Meter, Options, Toggle } from '../bits';
-import { money } from '../format';
+import { money, pct } from '../format';
+import { ProductImage } from '../photos';
 
-const TILE_ICON: Record<TileId, string> = { rack: '🗄️', station: '📦', conveyor: '➡️', robot: '🤖' };
-const TILE_NAME: Record<TileId, string> = { rack: 'Storage rack (+2,000 units)', station: 'Packing station (1 packer per shift)', conveyor: 'Conveyor (+25% to adjacent stations)', robot: 'Robot picker (+110 orders/day)' };
+const TILE: Record<TileId, { icon: string; label: string; color: string; what: string }> = {
+  rack: { icon: '🗄️', label: 'RACK', color: '#f5d2b3', what: `Storage rack: holds ${RACK_STORAGE.toLocaleString()} units.` },
+  station: { icon: '📦', label: 'PACK', color: '#d9f0e1', what: `Packing station: 1 packer per shift, ~${PACKER_RATE} orders/day at 100%.` },
+  conveyor: { icon: '➡️', label: 'BELT', color: '#c9ccd3', what: 'Conveyor: +25% speed for every station touching it.' },
+  robot: { icon: '🤖', label: 'ROBOT', color: '#c5ecd9', what: 'Robot picker: ships ~110 orders/day with no staff.' },
+};
 
 export function Ops() {
   const game = useGame((s) => s.game);
@@ -20,28 +25,36 @@ export function Ops() {
   const used = storageUsed(game);
   const storage = storageCapacity(game);
   const handEra = game.stage === 1 && !game.batchPacking;
+  const p7 = orderPace(game, 7);
+  const p30 = orderPace(game, 30);
+  const capNum = cap.thirdParty ? Infinity : cap.total;
+  const util = capNum === Infinity ? 0 : p7.own / Math.max(1, capNum);
+  const need = packersNeeded(game);
+  const stations = cap.stations;
+  const own30 = p30.own * 30;
+  const inHouse = own30 > 0 ? (game.team.packer.count * ROLES.packer.wage * 1.15 * game.team.packer.wageMult) / own30 : 0;
+  const lead = game.people.find((p) => p.role === 'lead');
 
   return (
     <div>
       <AppTitle app="Operations" title={SPACES[game.space].name} sub={SPACES[game.space].desc} />
 
-      <div className="funnel">
-        <div>
-          <b>{Math.round(backlog).toLocaleString()}</b>orders waiting
-          {oldest >= 2 && <div className="tiny bad-text">oldest: {oldest} days</div>}
-        </div>
-        <div>
-          <b>{cap.thirdParty ? '∞' : Math.round(cap.total).toLocaleString()}</b>packing capacity/day
-          <div className="tiny muted">{cap.thirdParty ? '3PL handles it' : [cap.founder && `you ${cap.founder}`, cap.team && `team ${cap.team}`, cap.robots && `robots ${cap.robots}`].filter(Boolean).join(' · ') || 'none yet'}</div>
-        </div>
-        <div className={used > storage ? 'leak' : ''}>
-          <b>{Math.round(used).toLocaleString()}</b>of {storage === Infinity ? '∞' : storage.toLocaleString()} storage
-          {used > storage && <div className="tiny bad-text">Overflow costs money</div>}
-        </div>
-        <div>
-          <b>{game.shipped.toLocaleString()}</b>shipped all-time
-        </div>
+      <div className="kpis">
+        <Kpi k="Orders / day" v={p7.total.toFixed(1)} s={`7-day avg · 30-day ${p30.total.toFixed(1)}`} />
+        <Kpi k="You ship / day" v={p7.own.toFixed(1)} s={p7.total - p7.own > 0.5 ? `${(p7.total - p7.own).toFixed(1)} shipped by marketplaces` : 'all orders'} />
+        <Kpi k="Packing capacity" v={cap.thirdParty ? '∞ (3PL)' : Math.round(cap.total).toLocaleString()} s={cap.thirdParty ? 'outsourced' : [cap.founder && `you ${cap.founder}`, cap.team && `team ${cap.team}`, cap.robots && `robots ${cap.robots}`].filter(Boolean).join(' · ') || 'none'} />
+        <Kpi k="Utilization" v={cap.thirdParty ? '—' : pct(util, 0)} s={util > 1 ? '⚠️ over capacity' : util > 0.85 ? 'running hot' : 'healthy'} warn={util > 1} />
+        <Kpi k="Waiting to ship" v={Math.round(backlog).toLocaleString()} s={oldest >= 2 ? `oldest ${oldest} days` : 'all fresh'} warn={oldest >= 3} />
+        <Kpi k="Storage" v={storage === Infinity ? '3PL' : pct(used / storage, 0)} s={`${Math.round(used).toLocaleString()} of ${storage === Infinity ? '∞' : storage.toLocaleString()}`} warn={used > storage} />
       </div>
+
+      {game.stage >= 2 && !game.thirdParty && (
+        <p className={`callout ${need > game.team.packer.count ? 'warn' : 'good'}`}>
+          To ship ~{Math.round(p7.own * 1.25)} orders/day (recent pace + 25% buffer) you need about <b>{need} packer{need === 1 ? '' : 's'}</b>
+          {game.space !== 'garage' && stations > 0 && <> on <b>{Math.ceil(need / game.shifts)} station{need > 1 ? 's' : ''}</b></>}. You have {game.team.packer.count} packer{game.team.packer.count === 1 ? '' : 's'}
+          {game.space !== 'garage' ? ` and ${stations} station${stations === 1 ? '' : 's'} (${game.shifts} shift${game.shifts > 1 ? 's' : ''})` : ' (3 stations in the garage)'}.
+        </p>
+      )}
       <p className="tiny muted">Orders that wait more than a week get cancelled, refunded and reviewed angrily.</p>
 
       {handEra ? (
@@ -54,28 +67,77 @@ export function Ops() {
           </div>
         </div>
       ) : (
-        game.stage <= 2 && <p className="tiny">Batch packing: leftover founder hours pack up to {cap.founder} orders tonight.</p>
+        game.stage <= 2 && <p className="tiny">Batch packing: your leftover founder hours pack up to {cap.founder} orders tonight.</p>
       )}
 
-      <div className="row" style={{ marginTop: 10 }}>
+      <div className="row" style={{ marginTop: 6 }}>
         {game.stage <= 2 && (
           <button className="small" onClick={() => act(callFriend)} disabled={game.extraHours > 0}>
             📞 Call a friend (+{FRIEND_HELP.hours}h today, {money(FRIEND_HELP.cost)})
           </button>
         )}
-        {game.stage >= 2 && <Toggle on={game.thirdParty} onChange={(v) => act(setThirdParty, v)} label={<>Use a 3PL <span className="tiny muted">({money(THIRD_PARTY.perOrder, true)}/order + {money(THIRD_PARTY.storagePerUnitMonth, true)}/unit/month storage, no limits)</span></>} />}
       </div>
+
+      {game.stage >= 2 && (
+        <div className="chat" style={{ marginTop: 12 }}>
+          <div className="row between">
+            <b>🚚 Fulfillment: in-house vs 3PL</b>
+            <Toggle on={game.thirdParty} onChange={(v) => act(setThirdParty, v)} label="Use a 3PL" />
+          </div>
+          <table className="data" style={{ marginTop: 6 }}>
+            <tbody>
+              <tr>
+                <td>In-house, per order</td>
+                <td className="num">{inHouse ? money(inHouse + PACKAGING_COST[game.brands[0].packaging], true) : '—'}</td>
+                <td className="tiny muted">packer wages ÷ orders shipped + packaging, plus rent and your stations</td>
+              </tr>
+              <tr>
+                <td>3PL, per order</td>
+                <td className="num">{money(THIRD_PARTY.perOrder + PACKAGING_COST[game.brands[0].packaging], true)}</td>
+                <td className="tiny muted">
+                  {money(THIRD_PARTY.perOrder, true)} handling + packaging + {money(THIRD_PARTY.storagePerUnitMonth, true)}/unit/month storage (~{money(used * THIRD_PARTY.storagePerUnitMonth)}/month now). No capacity limits.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="tiny muted">The Offer app shows what the 3PL fee does to each product’s margin; Finance shows 3PL fees per product.</p>
+        </div>
+      )}
+
+      {game.stage >= 3 && (
+        <div className="chat" style={{ marginTop: 12 }}>
+          <b>🦺 Warehouse lead autopilot</b>
+          <p className="tiny muted" style={{ margin: '4px 0 8px' }}>
+            {lead ? `${lead.name} reviews the floor every 3 days.` : 'Promote or hire a warehouse lead (Team app) to automate the floor.'}
+          </p>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <Toggle on={game.autopilot.staffing} onChange={(v) => act(setAutopilot, { staffing: v })} label={<>Staffing: hire and let go of packers to match demand, start a 2nd shift when stations are full</>} />
+            <Toggle on={game.autopilot.buildout} onChange={(v) => act(setAutopilot, { buildout: v })} label={<>Build-out: add packing stations near the dock and racks when storage passes 85% (spends cash)</>} />
+          </div>
+          {game.notices.filter((n) => n.text.startsWith('🦺')).slice(-3).reverse().map((n) => (
+            <div key={n.id} className="tiny muted">
+              Day {n.day}: {n.text.replace('🦺 ', '')}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <h3>Orders by product and channel</h3>
+      {pacing()}
+
+      {game.layout.w > 0 && <Layout />}
 
       {game.backlog.length > 0 && (
         <>
           <h3>Waiting to ship</h3>
           <table className="data">
             <tbody>
-              {game.backlog.slice(0, 8).map((b, i) => (
+              {game.backlog.slice(0, 6).map((b, i) => (
                 <tr key={i}>
                   <td>
-                    {def(game, b.productId).emoji} {b.customer ? `${b.customer} · ${b.city}` : def(game, b.productId).name}
+                    {def(game, b.productId).name} {b.customer && <span className="muted">· {b.customer}, {b.city}</span>}
                   </td>
+                  <td className="tiny muted">{CHANNELS[b.channel].name}</td>
                   <td className="num">{Math.round(b.orders)} order{Math.round(b.orders) === 1 ? '' : 's'}</td>
                   <td className={game.day - b.day >= 3 ? 'bad-text' : 'muted'}>day {b.day}</td>
                 </tr>
@@ -84,8 +146,6 @@ export function Ops() {
           </table>
         </>
       )}
-
-      {game.layout.w > 0 && <Layout />}
 
       {game.stage >= 3 && (
         <>
@@ -105,6 +165,76 @@ export function Ops() {
       )}
 
       {game.stage >= 2 && <Support />}
+      <p className="tiny muted" style={{ marginTop: 12 }}>
+        Payroll {money(payrollMonthly(game))}/month. In-house cost per order assumes packers only; rent and stations come on top.
+      </p>
+    </div>
+  );
+
+  function pacing() {
+    const p7 = productTrailing(game, 7);
+    const p30 = productTrailing(game, 30);
+    const c7 = channelTrailing(game, 7);
+    const c30 = channelTrailing(game, 30);
+    const d7 = Math.max(1, Math.min(7, game.history.length));
+    const d30 = Math.max(1, Math.min(30, game.history.length));
+    return (
+      <div className="row" style={{ alignItems: 'flex-start', gap: 16 }}>
+        <table className="data" style={{ flex: 2, minWidth: 280 }}>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th className="num">7d / day</th>
+              <th className="num">30d / day</th>
+              <th className="num">Stock</th>
+            </tr>
+          </thead>
+          <tbody>
+            {liveProducts(game).map((id) => (
+              <tr key={id}>
+                <td>
+                  <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                    <ProductImage game={game} pid={id} size={24} round={5} /> {def(game, id).name}
+                  </span>
+                </td>
+                <td className="num">{((p7[id]?.orders ?? 0) / d7).toFixed(1)}</td>
+                <td className="num">{((p30[id]?.orders ?? 0) / d30).toFixed(1)}</td>
+                <td className="num">{game.products[id].inventory.onHand.toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <table className="data" style={{ flex: 1, minWidth: 200 }}>
+          <thead>
+            <tr>
+              <th>Channel</th>
+              <th className="num">7d / day</th>
+              <th className="num">30d / day</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(Object.keys(c30) as ChannelId[]).map((ch) => (
+              <tr key={ch}>
+                <td>
+                  {CHANNELS[ch].emoji} {CHANNELS[ch].name}
+                </td>
+                <td className="num">{((c7[ch]?.orders ?? 0) / d7).toFixed(1)}</td>
+                <td className="num">{((c30[ch]?.orders ?? 0) / d30).toFixed(1)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+}
+
+function Kpi({ k, v, s, warn }: { k: string; v: string; s?: string; warn?: boolean }) {
+  return (
+    <div className="kpi" style={warn ? { borderColor: '#f0b0b0', background: '#fff5f5' } : undefined}>
+      <div className="k">{k}</div>
+      <div className="v">{v}</div>
+      {s && <div className="s">{s}</div>}
     </div>
   );
 }
@@ -123,19 +253,44 @@ function Layout() {
   });
   const tools: (TileId | 'erase')[] = ['rack', 'station', 'conveyor', ...(game.stage >= 5 ? (['robot'] as TileId[]) : []), 'erase'];
   const cap = fulfillmentCapacity(game);
+  const count = (t: TileId) => cells.filter((c) => c === t).length;
   return (
     <>
       <h3>🏗️ Warehouse layout</h3>
+      <div className="legend">
+        {(Object.keys(TILE) as TileId[])
+          .filter((t) => t !== 'robot' || game.stage >= 5)
+          .map((t) => (
+            <div key={t}>
+              <span className="sw" style={{ background: TILE[t].color }}>
+                {TILE[t].icon}
+              </span>
+              <span>
+                <b>
+                  {TILE[t].label} · {money(TILE_COST[t])}
+                </b>{' '}
+                <span className="muted">({count(t)} placed)</span>
+                <br />
+                {TILE[t].what}
+              </span>
+            </div>
+          ))}
+        <div>
+          <span className="sw" style={{ background: '#ffe9a8' }}>
+            🚛
+          </span>
+          <span>
+            <b>DOCK</b>
+            <br />
+            Where orders leave. Stations near it work faster.
+          </span>
+        </div>
+      </div>
       <p className="tiny muted">
-        Stations work best next to racks, close to the loading dock 🚛, and beside a conveyor. Removing a tile refunds half its cost. {cap.usedStations}/{cap.stations} stations staffed.
+        A station’s number is its speed: next to a rack and close to the dock is best, a conveyor beside it adds 25%. {cap.usedStations}/{cap.stations} stations staffed. Removing a tile refunds half its cost.
       </p>
-      <Options
-        value={tool}
-        options={tools.map((t) => ({ v: t, label: t === 'erase' ? '🧽 Remove' : `${TILE_ICON[t]} ${money(TILE_COST[t])}` }))}
-        onChange={setTool}
-      />
-      <p className="tiny">{tool === 'erase' ? 'Click a tile to remove it.' : TILE_NAME[tool]}</p>
-      <div className="layout" style={{ gridTemplateColumns: `repeat(${w}, 1fr)` }}>
+      <Options value={tool} options={tools.map((t) => ({ v: t, label: t === 'erase' ? '🧽 Remove' : `${TILE[t].icon} Place ${TILE[t].label.toLowerCase()}` }))} onChange={setTool} />
+      <div className="layout" style={{ gridTemplateColumns: `repeat(${w}, 1fr)`, marginTop: 8 }}>
         {cells.map((c, i) => {
           const x = i % w;
           const y = Math.floor(i / w);
@@ -144,12 +299,12 @@ function Layout() {
             <button
               key={i}
               className={`tile ${c ?? ''} ${i === dock ? 'dock' : ''}`}
-              title={c === 'station' ? `Efficiency ${Math.round(eff * 100)}%` : c ?? ''}
+              title={c ? `${TILE[c].what}${c === 'station' ? ` Speed ${Math.round(eff * 100)}%.` : ''}` : i === dock ? 'Loading dock' : 'Empty floor'}
               onClick={() => i !== dock && act(placeTile, x, y, tool === 'erase' ? null : tool)}
-              style={c === 'station' ? { background: `hsl(${Math.round((eff - 0.6) * 200)}, 60%, 85%)` } : undefined}
+              style={c === 'station' ? { background: `hsl(${Math.round((eff - 0.6) * 200)}, 60%, 85%)` } : c ? { background: TILE[c].color } : undefined}
             >
-              {i === dock ? '🚛' : c ? TILE_ICON[c] : ''}
-              {c === 'station' && <small>{Math.round(eff * 100)}</small>}
+              {i === dock ? '🚛' : c ? TILE[c].icon : ''}
+              {c && <span className="lbl">{c === 'station' ? `${Math.round(eff * 100)}%` : TILE[c].label}</span>}
             </button>
           );
         })}

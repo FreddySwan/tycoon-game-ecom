@@ -5,6 +5,7 @@ import { useGame } from '../../state/store';
 import { AppTitle, Meter } from '../bits';
 import { money, stars } from '../format';
 import { ProductPicker, useProduct } from '../ProductPicker';
+import { ProductImage, ProductShot } from '../photos';
 
 export function ShopBloc() {
   const game = useGame((s) => s.game);
@@ -152,13 +153,24 @@ export function ShopBloc() {
           </div>
         )}
         {m.hero > 0 && (
-          <div className="blk hero" style={{ filter: `saturate(${0.4 + p.photoStars * 0.15})` }}>
-            {d.emoji}
-            {p.photo?.prop === 'cat' ? '🐈' : ''}
-            {m.hero === 2 && <span style={{ fontSize: 14 }}> ▶︎</span>}
+          <div className="blk" style={{ padding: 0, overflow: 'hidden' }}>
+            {p.photo ? (
+              <ProductShot game={game} pid={pid} choice={p.photo} height={150}>
+                {m.hero === 2 && <span style={{ position: 'absolute', right: 8, bottom: 6, fontSize: 22 }}>▶️</span>}
+              </ProductShot>
+            ) : (
+              <div className="hero">No photo yet</div>
+            )}
           </div>
         )}
-        {m.gallery > 0 && <div className="blk">🖼 🖼 🖼 {m.gallery === 2 ? '(pro shots)' : ''}</div>}
+        {m.gallery > 0 && (
+          <div className="blk row" style={{ gap: 4 }}>
+            {[0, 1, 2].map((i) => (
+              <ProductImage key={i} game={game} pid={pid} index={i} size={48} round={6} style={m.gallery === 2 ? undefined : { filter: 'saturate(0.8) brightness(0.95)' }} />
+            ))}
+            {m.gallery === 2 && <span className="tiny muted">pro shots</span>}
+          </div>
+        )}
         <div className="blk">
           <b>{d.name}</b> · ${p.price}
           {m.description > 0 && (

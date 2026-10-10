@@ -40,16 +40,34 @@ export function setBrandName(s: GameState, brandId: number, name: string): void 
   brand(s, brandId).name = name.slice(0, 28);
 }
 
+/** Composition 0..1: product on a rule-of-thirds point (or dead centre) and filling the frame nicely. */
+export function compositionScore(choice: PhotoChoice): number {
+  const x = choice.x ?? 0.5;
+  const y = choice.y ?? 0.5;
+  const zoom = choice.zoom ?? 1;
+  const points = [
+    [1 / 3, 1 / 3],
+    [2 / 3, 1 / 3],
+    [1 / 3, 2 / 3],
+    [2 / 3, 2 / 3],
+  ];
+  const thirds = Math.min(...points.map(([px, py]) => Math.hypot(px - x, py - y)));
+  const centre = Math.hypot(0.5 - x, 0.5 - y) + 0.06;
+  const placement = Math.max(0, 1 - Math.min(thirds, centre) / 0.22);
+  const fill = Math.max(0, 1 - Math.abs(zoom - 1.3) / 0.7);
+  return placement * 0.6 + fill * 0.4;
+}
+
 export function scorePhoto(s: GameState, pid: string, choice: PhotoChoice): number {
   const best = def(s, pid).bestPhoto;
-  let score = 1;
-  if (choice.backdrop === best.backdrop) score += 1;
-  if (choice.light === best.light) score += 1;
-  else if (choice.light !== 'overhead') score += 0.5;
-  if (choice.prop === best.prop) score += 1;
-  if (choice.angle === best.angle) score += 1;
-  else if (choice.angle !== 'top') score += 0.25;
-  return Math.max(1, Math.min(5, Math.round(score)));
+  let raw = 1;
+  if (choice.backdrop === best.backdrop) raw += 1;
+  if (choice.light === best.light) raw += 1;
+  else if (choice.light !== 'overhead') raw += 0.5;
+  if (choice.prop === best.prop) raw += 1;
+  if (choice.angle === best.angle) raw += 1;
+  else if (choice.angle !== 'top') raw += 0.25;
+  return Math.max(1, Math.min(5, Math.round(1 + (raw - 1) * 0.8 + compositionScore(choice) * 1.1)));
 }
 
 export function canShoot(s: GameState, pid: string): boolean {
