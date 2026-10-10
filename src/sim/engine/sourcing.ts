@@ -1,5 +1,6 @@
 import {
   AIR_DAYS,
+  MARKET_SCAN,
   CATALOG,
   CREATIVE_ORDER,
   GENERIC_SAMPLE_NOTES,
@@ -13,7 +14,7 @@ import {
   SUPPLIERS,
   WIN_REORDER_QTY,
 } from '../data';
-import { activeContract, audiences, def, freightPerUnit, incomingUnits, listPrice, liveProducts, round2, steadyDailyUnits } from '../economics';
+import { activeContract, audiences, def, mod, freightPerUnit, incomingUnits, listPrice, liveProducts, round2, steadyDailyUnits } from '../economics';
 import { chance, normal, pick } from '../rng';
 import type { Freight, GameState, ReorderRule, SupplierId } from '../types';
 import { type ActionResult, book, milestone, newProduct, nextId, notify, spendCash, spendOn, useHours } from './core';
@@ -50,7 +51,7 @@ export function retireProduct(s: GameState, pid: string, liquidate: boolean): Ac
   if (!p) return 'Unknown product.';
   if (liquidate && p.inventory.onHand > 0) {
     const value = round2(p.inventory.costTotal * 0.3);
-    book(s, 'cogs', p.inventory.costTotal - value, { cash: false });
+    book(s, 'cogs', p.inventory.costTotal - value, { cash: false, sub: 'Liquidation losses' });
     s.cash = round2(s.cash + value);
     notify(s, 'cash', `Liquidated ${p.inventory.onHand} units of ${def(s, pid).name} for $${value.toFixed(0)}.`);
     p.inventory = { onHand: 0, costTotal: 0, qualityTotal: 0 };
@@ -91,6 +92,23 @@ export function researchProduct(s: GameState, pid: string, depth: 1 | 2): Action
   return null;
 }
 
+/** Finish a market-scan deep dive. Finding the real complaint gives the product a positioning angle. */
+export function completeScan(s: GameState, pid: string, foundComplaint: boolean): ActionResult {
+  const cur = researchLevel(s, pid);
+  if (cur < 1) return 'Do a quick scan first.';
+  if (cur < 2) {
+    const err = useHours(s, RESEARCH_HOURS[2]);
+    if (err) return err;
+    s.research[pid] = 2;
+  }
+  const scan = MARKET_SCAN[def(s, pid).baseId ?? pid];
+  if (foundComplaint && scan) {
+    s.positioning[pid] = scan.benefit;
+    notify(s, 'info', `🎯 Positioning found for ${def(s, pid).name}: lead with “${def(s, pid).benefits.find((b) => b.id === scan.benefit)?.text}”.`);
+  }
+  return null;
+}
+
 export function toggleShortlist(s: GameState, pid: string): ActionResult {
   if (s.shortlist.includes(pid)) {
     s.shortlist = s.shortlist.filter((x) => x !== pid);
@@ -114,7 +132,7 @@ export function revealDue(s: GameState): void {
 export function orderSample(s: GameState, pid: string, supplierId: SupplierId): ActionResult {
   if (!s.products[pid]) return 'Add the product first.';
   if (s.samples.some((x) => x.productId === pid && x.supplierId === supplierId)) return 'Sample already ordered.';
-  const err = spendOn(s, 'other', SAMPLE_COST);
+  const err = spendOn(s, 'other', SAMPLE_COST, undefined, 'Samples');
   if (err) return err;
   s.samples.push({ productId: pid, supplierId, arrivesDay: s.day + SAMPLE_DAYS, arrived: false, inspected: false });
   return null;
@@ -261,11 +279,11 @@ export function createPO(
   const total = upfront + (inspection ? INSPECTION_COST : 0);
   if (s.cash < total) return `Not enough cash. You need $${Math.ceil(total).toLocaleString()}.`;
   spendCash(s, upfront);
-  if (inspection) book(s, 'other', INSPECTION_COST);
+  if (inspection) book(s, 'other', INSPECTION_COST, { sub: 'Quality inspections' });
   const id = nextId(s);
   const isReorder = s.pos.some((p) => p.productId === pid);
   const priorFromSupplier = s.pos.filter((p) => p.supplierId === supplierId && p.productId === pid).length;
-  let quality = Math.min(1, Math.max(0.2, sup.quality + (def(s, pid).qualityBonus ?? 0) + normal(s, 0, 0.04)));
+  let quality = Math.min(1, Math.max(0.2, (sup.quality + (def(s, pid).qualityBonus ?? 0)) * mod(s, 'quality', supplierId) + normal(s, 0, 0.04)));
   if (sup.style === 'folds' && priorFromSupplier > 0 && chance(s, 0.5)) {
     quality -= 0.15;
     s.flags[`drift-${id}`] = true;
@@ -391,7 +409,7 @@ export function settleContracts(s: GameState): void {
     const short = Math.max(0, c.commitUnits - c.orderedUnits);
     if (short > 0) {
       const penalty = round2(short * 0.4);
-      book(s, 'other', penalty);
+      book(s, 'other', penalty, { sub: 'Contract penalties' });
       notify(s, 'cash', `${SUPPLIERS[c.supplierId].company} contract ended ${short.toLocaleString()} units short. Penalty: $${penalty.toLocaleString()}.`, true);
     } else notify(s, 'po', `${SUPPLIERS[c.supplierId].company} contract completed in full. They’d love to renew.`);
   }

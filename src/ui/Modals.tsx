@@ -3,6 +3,7 @@ import { AMBITIONS, STARTING_CASH, SUPPLIERS } from '../sim/data';
 import { averageRating, brandOf, def, profitOf } from '../sim/economics';
 import { compositionScore, handPack, inspectSample, MILESTONE_LABELS, MILESTONE_PICS, nextHandPack, resolveEvent, sampleNote, scorePhoto, setFlag, takePhoto } from '../sim/engine';
 import { ProductImage, ProductShot } from './photos';
+import { MarketScan } from './MarketScan';
 import type { MilestoneId, PhotoChoice, SupplierId } from '../sim/types';
 import { sfx } from '../state/sound';
 import { useGame } from '../state/store';
@@ -32,6 +33,8 @@ export function Modals() {
       return <Milestone text={modal.text} />;
     case 'report':
       return <Report />;
+    case 'scan':
+      return <MarketScan productId={modal.productId} />;
   }
 }
 

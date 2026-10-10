@@ -201,6 +201,16 @@ export const ROLES: Record<RoleId, RoleDef> = {
   designer: { id: 'designer', name: 'Product designer', emoji: '✏️', wage: 5000, unlockStage: 4, seat: 'office', desc: 'Speeds up Product Lab projects by 50% each.', firstName: 'Ines Duarte' },
   brandmgr: { id: 'brandmgr', name: 'Brand manager', emoji: '🎨', wage: 4800, unlockStage: 5, seat: 'office', desc: 'Runs an extra brand. Brands without a manager grow at half speed.', firstName: 'Theo Park' },
 };
+/** Which team each role reports into, for the payroll breakdown. */
+export const ROLE_TEAM: Record<RoleId, string> = {
+  packer: 'Operations: packers',
+  lead: 'Operations: leads',
+  support: 'Customer success',
+  marketer: 'Marketing',
+  buyer: 'Buying & supply',
+  designer: 'Product design',
+  brandmgr: 'Brand management',
+};
 export const ROLE_ORDER: RoleId[] = ['packer', 'support', 'marketer', 'buyer', 'lead', 'designer', 'brandmgr'];
 
 export const SPACES: Record<SpaceId, SpaceDef> = {

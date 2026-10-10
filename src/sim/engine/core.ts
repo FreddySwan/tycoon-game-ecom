@@ -1,7 +1,7 @@
 import { BRAND_COLORS, CATALOG, CITIES, FIRST_NAMES, FOUNDER_HOURS, LAST_INITIALS, MODULE_IDS, STARTING_CASH } from '../data';
 import { def, emptyPL, hoursLeft, round2 } from '../economics';
 import { pick } from '../rng';
-import { hooksFor } from '../data';
+import { CHANNELS, hooksFor } from '../data';
 import type { AdDay, AdSource, Brand, ChannelId, Creative, CreativeType, DailyRecord, GameState, MilestoneId, ModuleId, NoticeKind, OrderSource, PLCategory, ProductDef, ProductState, RoleId, Slice } from '../types';
 
 export type ActionResult = string | null;
@@ -188,6 +188,10 @@ export function createGame(seed = Date.now()): GameState {
     adPolicy: { maxSharePct: 20, floor: 100, marginPct: 25 },
     autopilot: { staffing: false, buildout: false },
     research: {},
+    positioning: {},
+    angleTested: {},
+    modifiers: [],
+    emails: [],
     creatorPosts: [],
     shortlist: [],
     ambition: null,
@@ -259,6 +263,13 @@ export function slice(s: GameState, pid: string | undefined, ch: ChannelId | und
   if (ch) (r.channelPL[ch] ??= emptySlice())[key] += amount;
 }
 
+/** Default breakdown line for a P&L entry: product for sales lines, channel for fees. */
+function subLabel(s: GameState, cat: PLCategory, pid?: string, ch?: ChannelId): string {
+  if ((cat === 'revenue' || cat === 'cogs' || cat === 'fulfillment' || cat === 'refunds') && pid && s.products[pid]) return def(s, pid).name;
+  if (cat === 'fees' && ch) return `${CHANNELS[ch].name} fees`;
+  return 'Other';
+}
+
 /** Record ad results for one product and source on today's row. */
 export function adStat(s: GameState, pid: string, src: AdSource, patch: Partial<AdDay>): void {
   const r = today(s);
@@ -282,9 +293,12 @@ export function today(s: GameState): DailyRecord {
 }
 
 /** Record an expense or income in the P&L for today and move the cash. */
-export function book(s: GameState, cat: PLCategory, amount: number, opts: { cash?: boolean; brandId?: number; productId?: string; channel?: ChannelId } = {}): void {
+export function book(s: GameState, cat: PLCategory, amount: number, opts: { cash?: boolean; brandId?: number; productId?: string; channel?: ChannelId; sub?: string } = {}): void {
   const r = today(s);
   r.pl[cat] += amount;
+  const sub = opts.sub ?? subLabel(s, cat, opts.productId, opts.channel);
+  const lines = ((r.plSub ??= {})[cat] ??= {});
+  lines[sub] = (lines[sub] ?? 0) + amount;
   const key = SLICE_KEYS[cat];
   if (key && (opts.productId || opts.channel)) slice(s, opts.productId, opts.channel, key, amount);
   if (opts.brandId !== undefined) {
@@ -295,9 +309,9 @@ export function book(s: GameState, cat: PLCategory, amount: number, opts: { cash
 }
 
 /** Spend cash on something that is an expense right now (P&L category given). */
-export function spendOn(s: GameState, cat: PLCategory, amount: number, brandId?: number): ActionResult {
+export function spendOn(s: GameState, cat: PLCategory, amount: number, brandId?: number, sub?: string): ActionResult {
   if (s.cash < amount) return `Not enough cash. You need $${Math.ceil(amount).toLocaleString()}.`;
-  book(s, cat, amount, { brandId });
+  book(s, cat, amount, { brandId, sub });
   return null;
 }
 
@@ -329,6 +343,11 @@ export function migrate(s: GameState): GameState {
   s.shortlist ??= [];
   s.creatorPosts ??= [];
   s.payables ??= [];
+  s.modifiers ??= [];
+  s.emails ??= [];
+  s.positioning ??= {};
+  s.angleTested ??= {};
+  for (const b of s.brands) b.email.queue ??= [];
   for (const id of Object.keys(s.products)) s.products[id].creatives ??= defaultCreatives(def(s, id));
   for (const r of s.history) {
     r.productPL ??= {};

@@ -11,7 +11,27 @@ export type Packaging = 'basic' | 'sturdy' | 'branded';
 export type CreativeType = 'white' | 'video' | 'review' | 'ugc';
 export type TileId = 'rack' | 'station' | 'conveyor' | 'robot';
 export type AdSource = 'scrollr' | 'seekly' | 'creator' | 'sponsored';
-export type OrderSource = AdSource | 'organic' | 'marketplace' | 'repeat' | 'email' | 'wholesale';
+export type OrderSource = AdSource | 'organic' | 'marketplace' | 'repeat' | 'email' | 'flow' | 'wholesale';
+export type CampaignType = 'promo' | 'review' | 'replenish' | 'launch' | 'story';
+export type Segment = 'all' | 'recent' | 'lapsed' | 'vip';
+
+export interface EmailCampaign {
+  id: number;
+  day: number;
+  brandId: number;
+  type: CampaignType;
+  segment: Segment;
+  discount: number;
+  productId?: string;
+  sent: number;
+  opens: number;
+  clicks: number;
+  unsubscribes: number;
+  orders: number;
+  revenue: number;
+  reviews: number;
+  cost: number;
+}
 export type HookType = 'problem' | 'benefit' | 'emotional' | 'social' | 'urgency';
 export type Cta = 'shop' | 'learn' | 'get';
 export type PLCategory =
@@ -102,6 +122,18 @@ export interface PhotoChoice {
   x?: number;
   y?: number;
   zoom?: number;
+}
+
+export type ModKey = 'adCost' | 'adCtr' | 'seaFreight' | 'airFreight' | 'unitCost' | 'packaging' | 'cvr' | 'creditRate' | 'creditLimit' | 'shipping' | 'quality';
+
+export interface Modifier {
+  id: number;
+  key: ModKey;
+  /** Optional scope, e.g. a supplier id for unitCost. */
+  scope?: string;
+  mult: number;
+  until: number;
+  label: string;
 }
 
 export interface Creative {
@@ -327,6 +359,8 @@ export interface Listing {
   promoCooldown: number;
   sponsored: number;
   recent: number[];
+  /** Sponsored-listing results, newest last (14 days). */
+  adHistory?: { day: number; spend: number; orders: number }[];
 }
 
 export interface ReorderRule {
@@ -366,18 +400,30 @@ export interface ProductState {
   creatorBoost: number[];
 }
 
+export type Vibe = 'playful' | 'clean' | 'cozy' | 'bold' | 'minimal';
+
+export interface PackDesign {
+  color: Vibe;
+  print: 'plain' | 'logo' | 'pattern';
+  insert: 'none' | 'tissue' | 'sticker';
+}
+
 export interface Brand {
   id: number;
+  packDesign?: PackDesign;
+  /** 0..1, how well the packaging fits the brand's category. */
+  packScore?: number;
+  theme?: Vibe;
   name: string;
   color: string;
   createdDay: number;
-  store: { launched: boolean; launchedDay: number | null; modules: Record<ModuleId, number> };
+  store: { launched: boolean; launchedDay: number | null; modules: Record<ModuleId, number>; order?: ModuleId[] };
   packaging: Packaging;
   thankYouCard: boolean;
   freeShipping: boolean;
   awareness: number;
   customers: number;
-  email: { list: number; flows: { welcome: boolean; postPurchase: boolean; winback: boolean }; lastCampaign: number; fatigue: number; pending: number[] };
+  email: { list: number; flows: { welcome: boolean; postPurchase: boolean; winback: boolean }; lastCampaign: number; fatigue: number; pending: number[]; queue?: { id: number; days: number[]; productId?: string; discount: number }[] };
 }
 
 export interface BacklogBucket {
@@ -480,6 +526,9 @@ export interface DailyRecord {
   sources: Partial<Record<OrderSource, number>>;
   /** Orders you pack and ship yourself (excludes marketplace-fulfilled). */
   ownOrders?: number;
+  sourceRevenue?: Partial<Record<OrderSource, number>>;
+  /** P&L lines broken down one level (product, channel, ad source, team, item). */
+  plSub?: Partial<Record<PLCategory, Record<string, number>>>;
 }
 
 export interface MonthReport {
@@ -580,7 +629,7 @@ export interface GameState {
   reviewsRecent: Review[];
   cards: CustomerCard[];
   tickets: { queue: { day: number; count: number; kind: CardKind; revenue: number; productId: string }[]; handled: number; dropped: number };
-  support: { autoRefundUnder: number; tone: 'template' | 'personal' };
+  support: { autoRefundUnder: number; tone: 'template' | 'personal'; templates?: Partial<Record<CardKind, string>>; outsource?: boolean };
   events: GameEvent[];
   eventCooldowns: Record<string, number>;
   bills: Bill[];
@@ -605,8 +654,15 @@ export interface GameState {
   wholesale: WholesaleOrder[];
   lab: LabProject[];
   adPolicy: { maxSharePct: number; floor: number; marginPct: number };
+  /** Temporary deals and effects from offers, e.g. { key: 'seaFreight', mult: 0.75, until: 120 }. */
+  modifiers: Modifier[];
   autopilot: { staffing: boolean; buildout: boolean };
   research: Record<string, number>;
+  /** Benefit that answers the top complaint about rivals, found in a market scan. */
+  positioning: Record<string, string>;
+  /** Score (0-3) of the ad-angle test per product. */
+  angleTested: Record<string, number>;
+  emails: EmailCampaign[];
   creatorPosts: { day: number; productId: string; tier: string; cost: number; viral: boolean; handle: string }[];
   shortlist: string[];
   ambition: AmbitionId | null;

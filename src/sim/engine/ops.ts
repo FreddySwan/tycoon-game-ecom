@@ -1,9 +1,8 @@
 import { BATCH_UNLOCK_AFTER, FRIEND_HELP, HOURS, PACKAGING_COST, PACKER_RATE, ROLES, SPACES, THANK_YOU_COST, THIRD_PARTY, TILE_COST } from '../data';
-import { brandOf, def, intlExtraCost, landedUnitCost, round2, seatsUsed, stockQuality, storageCapacity, storageUsed } from '../economics';
-import { chance } from '../rng';
+import { brandOf, def, intlExtraCost, mod, round2, seatsUsed, stockQuality, storageCapacity, storageUsed } from '../economics';
 import type { BacklogBucket, CardChoice, CustomerCard, GameState, RoleId, TileId } from '../types';
 import { type ActionResult, book, milestone, notify, slice, spendOn, useHours } from './core';
-import { addReview } from './reviews';
+import { applyCardChoice } from './reviews';
 
 // ───────────────────────────── shipping ─────────────────────────────
 
@@ -15,11 +14,14 @@ export function shipFromBucket(s: GameState, b: BacklogBucket, n: number): void 
   const share = n / b.orders;
   const units = b.units * share;
   const intl = b.intl * share;
-  const perOrder = d.shipToCustomer * (units / n > 1.5 ? 1.25 : 1) + PACKAGING_COST[brand.packaging] + (brand.thankYouCard ? THANK_YOU_COST : 0);
+  const perOrder = d.shipToCustomer * (units / n > 1.5 ? 1.25 : 1) * mod(s, 'shipping') + PACKAGING_COST[brand.packaging] * mod(s, 'packaging') + (brand.thankYouCard ? THANK_YOU_COST : 0);
   const tpl = s.thirdParty ? n * THIRD_PARTY.perOrder : 0;
   const cost = n * perOrder + tpl + intl * intlExtraCost(s, b.productId);
-  book(s, 'fulfillment', cost, { brandId: brand.id, productId: b.productId, channel: b.channel });
-  if (tpl) slice(s, b.productId, b.channel, 'thirdParty', tpl);
+  book(s, 'fulfillment', cost - tpl, { brandId: brand.id, productId: b.productId, channel: b.channel });
+  if (tpl) {
+    book(s, 'fulfillment', tpl, { brandId: brand.id, productId: b.productId, channel: b.channel, sub: '3PL handling' });
+    slice(s, b.productId, b.channel, 'thirdParty', tpl);
+  }
   s.shipped += n;
   s.deliveries.push({
     dueDay: s.day + 4 + (intl > 0 ? 2 : 0),
@@ -60,7 +62,7 @@ export function handPack(s: GameState): ActionResult {
 
 export function callFriend(s: GameState): ActionResult {
   if (s.extraHours > 0) return 'Your friend is already helping today.';
-  const err = spendOn(s, 'payroll', FRIEND_HELP.cost);
+  const err = spendOn(s, 'payroll', FRIEND_HELP.cost, undefined, 'Temp help');
   if (err) return err;
   s.extraHours = FRIEND_HELP.hours;
   return null;
@@ -80,7 +82,7 @@ export function hire(s: GameState, role: RoleId, n = 1): ActionResult {
   if (s.stage < r.unlockStage) return `${r.name}s unlock at stage ${r.unlockStage}.`;
   if (role === 'lead' && s.space === 'garage') return 'A warehouse lead needs a warehouse.';
   if (seatsUsed(s, r.seat) + n > seatLimit(s, r.seat)) return `No ${r.seat === 'floor' ? 'floor space' : 'desks'} left. A bigger space fits more people.`;
-  const err = spendOn(s, 'other', RECRUIT_FEE * n);
+  const err = spendOn(s, 'other', RECRUIT_FEE * n, undefined, 'Recruiting');
   if (err) return err;
   const t = s.team[role];
   if (t.count === 0 && !s.people.some((p) => p.role === role)) {
@@ -98,7 +100,7 @@ export function fire(s: GameState, role: RoleId, n = 1): ActionResult {
   const t = s.team[role];
   if (t.count < n) return 'Not that many people in this team.';
   const severance = round2((ROLES[role].wage * t.wageMult * n) / 2);
-  book(s, 'payroll', severance);
+  book(s, 'payroll', severance, { sub: 'Severance' });
   t.count -= n;
   t.morale = Math.max(0, t.morale - 8);
   if (t.count === 0) s.people = s.people.filter((p) => p.role !== role);
@@ -183,13 +185,13 @@ export function placeTile(s: GameState, x: number, y: number, tile: TileId | nul
   if (current === tile) return null;
   if (tile === 'robot' && s.stage < 5) return 'Robot pickers unlock at the Established stage.';
   if (tile) {
-    const err = spendOn(s, 'other', TILE_COST[tile]);
+    const err = spendOn(s, 'other', TILE_COST[tile], undefined, 'Warehouse build-out');
     if (err) return err;
   }
   if (current) {
     const refund = TILE_COST[current] * 0.5;
     s.cash = round2(s.cash + refund);
-    book(s, 'other', -refund, { cash: false });
+    book(s, 'other', -refund, { cash: false, sub: 'Warehouse build-out' });
   }
   cells[i] = tile;
   return null;
@@ -204,7 +206,7 @@ export function buyAutomation(s: GameState, key: keyof typeof AUTOMATION): Actio
   const a = AUTOMATION[key];
   if (s.automation[key]) return null;
   if (s.stage < a.stage) return `Unlocks at stage ${a.stage}.`;
-  const err = spendOn(s, 'other', a.cost);
+  const err = spendOn(s, 'other', a.cost, undefined, 'Automation');
   if (err) return err;
   s.automation[key] = true;
   return null;
@@ -234,43 +236,25 @@ export function resolveCard(s: GameState, cardId: number, choiceId: string): Act
   const err = useHours(s, HOURS.card);
   if (err) return err;
   s.cards = s.cards.filter((c) => c.id !== cardId);
-  const pid = card.productId;
-  const brandId = s.products[pid]?.brandId;
-  const unit = landedUnitCost(s, pid) + def(s, pid).shipToCustomer + PACKAGING_COST[brandOf(s, pid).packaging];
-  switch (choiceId) {
-    case 'refund':
-      refund(s, card.revenue, brandId, pid);
-      if (chance(s, 0.3)) addReview(s, pid, 4, card.customer, 'Product had an issue but they refunded me right away.');
-      break;
-    case 'replace': {
-      book(s, 'fulfillment', unit, { brandId, productId: pid });
-      const inv = s.products[pid].inventory;
-      if (inv.onHand > 0) {
-        const avg = inv.costTotal / inv.onHand;
-        const q = inv.qualityTotal / inv.onHand;
-        inv.onHand -= 1;
-        inv.costTotal = round2(Math.max(0, inv.costTotal - avg));
-        inv.qualityTotal -= q;
-      }
-      if (chance(s, 0.6)) addReview(s, pid, 5, card.customer, 'Had a problem, they sent a new one immediately. Great service!');
-      break;
-    }
-    case 'photo':
-      if (chance(s, 0.25)) addReview(s, pid, 1, card.customer, 'They wanted PROOF before helping. Unbelievable.');
-      else refund(s, card.revenue * 0.5, brandId, pid);
-      break;
-    case 'partial':
-      refund(s, card.revenue * 0.5, brandId, pid);
-      if (chance(s, 0.25)) addReview(s, pid, 3, card.customer);
-      break;
-    case 'code':
-      refund(s, card.revenue * 0.15, brandId, pid);
-      if (chance(s, 0.3)) addReview(s, pid, 4, card.customer, 'Slow shipping but the owner was lovely about it.');
-      break;
-    case 'template':
-      if (chance(s, 0.4)) addReview(s, pid, 2, card.customer, 'Slow, and the reply felt like a robot wrote it.');
-      break;
-  }
+  applyCardChoice(s, card, choiceId);
+  return null;
+}
+
+export function templatesUnlocked(s: GameState): boolean {
+  return s.stage >= 2 || !!s.milestones.first_profitable_reorder;
+}
+
+export function setTemplate(s: GameState, kind: CustomerCard['kind'], choiceId: string | null): ActionResult {
+  if (!templatesUnlocked(s)) return 'Reply templates unlock after your first profitable reorder.';
+  const t = (s.support.templates ??= {});
+  if (choiceId) t[kind] = choiceId;
+  else delete t[kind];
+  return null;
+}
+
+export function setOutsource(s: GameState, on: boolean): ActionResult {
+  if (on && !templatesUnlocked(s)) return 'Outsourcing unlocks after your first profitable reorder.';
+  s.support.outsource = on;
   return null;
 }
 

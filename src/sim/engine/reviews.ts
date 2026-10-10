@@ -1,5 +1,5 @@
-import { DAMAGE_RATE, REVIEW_TEXT } from '../data';
-import { brandOf, returnRate, supportCapacity } from '../economics';
+import { DAMAGE_RATE, PACKAGING_COST, REVIEW_TEXT } from '../data';
+import { brandOf, def, hoursLeft, landedUnitCost, returnRate, supportCapacity } from '../economics';
 import { binomial, chance, normal, pick } from '../rng';
 import type { CardKind, Delivery, GameState } from '../types';
 import { book, milestone, nextId, notify, randomCustomer } from './core';
@@ -23,7 +23,7 @@ export function addReview(s: GameState, pid: string, stars: number, author: stri
 }
 
 /** Add many reviews at once around a mean star rating; a few get written out for the feed. */
-function addReviews(s: GameState, pid: string, n: number, mean: number): void {
+export function addReviews(s: GameState, pid: string, n: number, mean: number): void {
   if (n <= 0) return;
   const r = s.products[pid].reviews;
   const weights = [1, 2, 3, 4, 5].map((k) => Math.exp(-((k - mean) ** 2) / 1.1));
@@ -47,9 +47,10 @@ function addReviews(s: GameState, pid: string, n: number, mean: number): void {
 
 function queueTickets(s: GameState, kind: CardKind, count: number, revenueEach: number, pid: string, d: Delivery): void {
   if (count <= 0) return;
-  // Hands-on era: no support team yet, so problems arrive as individual cards.
+  // Hands-on era: no support team yet, so problems arrive as individual cards (unless a template answers them).
   if (!s.team.support.count) {
     for (let i = 0; i < count; i++) {
+      if (autoReply(s, kind, pid, revenueEach, randomCustomer(s).name)) continue;
       if (s.cards.length >= 6) {
         // Overflow: nobody answers, the customer files a chargeback.
         book(s, 'refunds', revenueEach, { productId: pid, channel: d.channel });
@@ -112,7 +113,7 @@ export function processDeliveries(s: GameState): void {
 
     const reviewRate = 0.22 + (brand.thankYouCard ? 0.08 : 0) + (brand.packaging === 'branded' ? 0.04 : 0);
     const reviewers = binomial(s, ok - returned, reviewRate);
-    let mean = 1.6 + 3.6 * d.quality + (brand.thankYouCard ? 0.25 : 0) + (brand.packaging === 'branded' ? 0.15 : 0);
+    let mean = 1.6 + 3.6 * d.quality + (brand.thankYouCard ? 0.25 : 0) + (brand.packaging === 'branded' ? 0.15 : 0) + 0.25 * (brand.packScore ?? 0);
     if (d.delayDays > 3) mean -= 0.8;
     else if (d.delayDays > 1) mean -= 0.4;
     if (reviewers === 1 && chance(s, 0.5)) addReview(s, d.productId, mean + normal(s, 0, 0.6), randomCustomer(s).name);
@@ -177,4 +178,63 @@ export function expireCards(s: GameState): void {
     }
     notify(s, 'card', `${card.customer} gave up waiting for a reply.`);
   }
+}
+
+const OUTSOURCE_PER_TICKET = 2.5;
+
+/** What happens when a customer problem gets a given reply. Shared by hand replies, templates and outsourcing. */
+export function applyCardChoice(s: GameState, card: { productId: string; customer: string; revenue: number }, choiceId: string): void {
+  const pid = card.productId;
+  const brandId = s.products[pid]?.brandId;
+  const unit = landedUnitCost(s, pid) + def(s, pid).shipToCustomer + PACKAGING_COST[brandOf(s, pid).packaging];
+  const refund = (amount: number) => book(s, 'refunds', amount, { brandId, productId: pid });
+  switch (choiceId) {
+    case 'refund':
+      refund(card.revenue);
+      if (chance(s, 0.3)) addReview(s, pid, 4, card.customer, 'Product had an issue but they refunded me right away.');
+      break;
+    case 'replace': {
+      book(s, 'fulfillment', unit, { brandId, productId: pid, sub: 'Replacements' });
+      const inv = s.products[pid].inventory;
+      if (inv.onHand > 0) {
+        const avg = inv.costTotal / inv.onHand;
+        const q = inv.qualityTotal / inv.onHand;
+        inv.onHand -= 1;
+        inv.costTotal = Math.max(0, Math.round((inv.costTotal - avg) * 100) / 100);
+        inv.qualityTotal -= q;
+      }
+      if (chance(s, 0.6)) addReview(s, pid, 5, card.customer, 'Had a problem, they sent a new one immediately. Great service!');
+      break;
+    }
+    case 'photo':
+      if (chance(s, 0.25)) addReview(s, pid, 1, card.customer, 'They wanted PROOF before helping. Unbelievable.');
+      else refund(card.revenue * 0.5);
+      break;
+    case 'partial':
+      refund(card.revenue * 0.5);
+      if (chance(s, 0.25)) addReview(s, pid, 3, card.customer);
+      break;
+    case 'code':
+      refund(card.revenue * 0.15);
+      if (chance(s, 0.3)) addReview(s, pid, 4, card.customer, 'Slow shipping but the owner was lovely about it.');
+      break;
+    case 'template':
+      if (chance(s, 0.4)) addReview(s, pid, 2, card.customer, 'Slow, and the reply felt like a robot wrote it.');
+      break;
+  }
+}
+
+/** Templates (and an outsourced inbox) answer standard problems before they ever reach you. */
+function autoReply(s: GameState, kind: CardKind, pid: string, revenue: number, customer: string): boolean {
+  const choice = s.support.templates?.[kind];
+  if (!choice || !(s.stage >= 2 || s.milestones.first_profitable_reorder)) return false;
+  if (s.support.outsource) {
+    book(s, 'payroll', OUTSOURCE_PER_TICKET, { sub: 'Outsourced support' });
+  } else {
+    if (hoursLeft(s) < 0.1) return false;
+    s.hoursUsed += 0.1;
+  }
+  applyCardChoice(s, { productId: pid, customer, revenue }, choice);
+  s.tickets.handled++;
+  return true;
 }

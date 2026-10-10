@@ -28,6 +28,7 @@ export function Products() {
   const act = useGame((s) => s.act);
   const setTab = useGame((s) => s.setTab);
   const setProduct = useGame((s) => s.setProduct);
+  const setModal = useGame((s) => s.setModal);
   const [cat, setCat] = useState<CategoryId | 'all'>('all');
   const live = liveProducts(game);
   const candidates = game.revealed.filter((id) => (!game.products[id] || game.products[id].retired) && def(game, id));
@@ -262,7 +263,7 @@ export function Products() {
             </button>
           )}
           {lvl === 1 && (
-            <button className="small" onClick={() => act(researchProduct, id, 2)}>
+            <button className="small" onClick={() => setModal({ kind: 'scan', productId: id })}>
               🧪 Deep dive (2h)
             </button>
           )}

@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { CREATIVES, CREATIVE_ORDER, CREATORS, CTA_FIT, HOOK_FIT, hooksFor } from '../../sim/data';
 import { adTrailing, audiences, breakEvenCPA, creativeMult, creativeUnlocked, dailyAdBudget, def, liveProducts, recentCPA, searchForecast, trailing } from '../../sim/economics';
-import { adCap, hireCreator, onStore, searchUnlocked, setAdCell, setAdPolicy, setCreative, setSearch } from '../../sim/engine';
+import { adCap, completeAngleTest, hireCreator, onStore, searchUnlocked, setAdCell, setAdPolicy, setCreative, setSearch } from '../../sim/engine';
 import type { AdCell, AdDay, AdSource, CreativeType, Cta, GameState } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle, NumberInput, Options, SubTabs } from '../bits';
@@ -314,6 +314,7 @@ export function Ads() {
         <p className="tiny muted">
           Each ad format uses one creative: a photo, a hook line and a button. Hooks land differently with each audience; your own photo shoot can beat stock photos when it’s good. Changing a creative restarts its learning.
         </p>
+        <AngleTest key={pid} pid={pid} />
         {CREATIVE_ORDER.map((c) => creativeEditor(pid, c))}
       </>
     );
@@ -371,7 +372,9 @@ export function Ads() {
             </p>
             <Options value={cr.cta} options={(Object.keys(CTA_FIT) as Cta[]).map((k) => ({ v: k, label: CTA_FIT[k].label }))} onChange={(v) => act(setCreative, pid, type, { cta: v })} />
             <div style={{ marginTop: 10 }}>
-              {auds.map((a, i) => {
+              {game.angleTested[pid] === undefined && !Object.values(p.ads).some((c) => c.creative === type && c.daysActive >= 5) ? (
+                <p className="tiny muted">🔒 Audience fit is unknown. Run the angle test above, or let this creative run for 5 days.</p>
+              ) : auds.map((a, i) => {
                 const m = creativeMult(game, pid, type, i);
                 const score = m.ctr * m.cvr;
                 return (
@@ -486,6 +489,7 @@ export function Ads() {
             <li>An ad that wins orders for at least <b>{pol.marginPct}%</b> less than break-even gets <b>+20% budget every day</b>, as far as the cap allows.</li>
             <li>An ad that costs more than an order earns gets <b>paused</b> once there’s enough data (3+ orders or 2× break-even spent).</li>
             <li>New tests launch automatically when a product has no running ads.</li>
+            <li>Marketplace sponsored listings follow the same rules, judged against each marketplace’s own margin (fees included). Lightning deals run when a listing’s rank sags and 20% off still leaves a profit.</li>
             <li>Total daily spend stays under your cap; the least efficient ads get trimmed first.</li>
           </ul>
           <div style={{ display: 'grid', gap: 10, maxWidth: 520 }}>
@@ -565,6 +569,72 @@ function Phone({ game, pid, type }: { game: GameState; pid: string; type: Creati
         <div className="muted">{d.name} · {money(p.price)}</div>
       </div>
       <div className="cta">{CTA_FIT[cr.cta].label}</div>
+    </div>
+  );
+}
+
+/** Mini-game: match hook styles to audiences before spending money. A good read earns a fresh-angle click boost. */
+function AngleTest({ pid }: { pid: string }) {
+  const game = useGame((s) => s.game);
+  const act = useGame((s) => s.act);
+  const d = def(game, pid);
+  const auds = audiences(game, pid);
+  const hooks = hooksFor(d);
+  const options = (['problem', 'benefit', 'emotional'] as const).map((t) => hooks.find((h) => h.type === t)!);
+  const [answers, setAnswers] = useState<(string | null)[]>([null, null, null]);
+  const [done, setDone] = useState<number | null>(game.angleTested[pid] ?? null);
+  const best = (i: number) => options.reduce((a, b) => (HOOK_FIT[b.type].ctr[i] > HOOK_FIT[a.type].ctr[i] ? b : a)).id;
+  const ctaBest: Cta = 'learn';
+  const questions = [
+    { q: `Which hook stops a ${auds[0].name.toLowerCase()} mid-scroll?`, opts: options.map((h) => ({ v: h.id, label: h.text })), right: best(0) },
+    { q: `Which hook wins over ${auds[1].name.toLowerCase()}?`, opts: options.map((h) => ({ v: h.id, label: h.text })), right: best(1) },
+    { q: 'Cold audiences have never heard of you. Which button gets more of them to click?', opts: (Object.keys(CTA_FIT) as Cta[]).map((k) => ({ v: k, label: CTA_FIT[k].label })), right: ctaBest },
+  ];
+  if (done !== null && answers.every((a) => a === null))
+    return (
+      <div className="callout good" style={{ marginBottom: 12 }}>
+        🎯 Angle test done ({done}/3). {done > 0 ? `Fresh-angle boost: +${done * 7}% clicks for 3 weeks after the test.` : 'No boost this time, but you can see how each creative fits now.'}
+      </div>
+    );
+  const score = questions.reduce((a, q, i) => a + (answers[i] === q.right ? 1 : 0), 0);
+  return (
+    <div className="chat" style={{ marginBottom: 14 }}>
+      <b>🧭 Find your angle</b>
+      <p className="tiny muted" style={{ margin: '4px 0 8px' }}>Before spending a cent, read your audiences. Each right answer is worth +7% clicks on this product for 3 weeks.</p>
+      {questions.map((q, i) => (
+        <div key={i} style={{ marginBottom: 10 }}>
+          <div className="tiny" style={{ fontWeight: 700, marginBottom: 4 }}>
+            {i + 1}. {q.q}
+          </div>
+          <div className="options">
+            {q.opts.map((o) => {
+              const picked = answers[i] === o.v;
+              const reveal = done !== null;
+              const cls = reveal ? (o.v === q.right ? 'on right' : picked ? 'wrong' : '') : picked ? 'on' : '';
+              return (
+                <button key={o.v} className={cls} disabled={reveal} onClick={() => setAnswers((a) => a.map((x, k) => (k === i ? o.v : x)))}>
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      {done === null ? (
+        <button
+          className="primary"
+          disabled={answers.some((a) => a === null)}
+          onClick={() => {
+            if (!act(completeAngleTest, pid, score)) setDone(score);
+          }}
+        >
+          Lock in answers
+        </button>
+      ) : (
+        <p className={`callout ${done >= 2 ? 'good' : ''}`}>
+          {done}/3 right. {done > 0 ? `+${done * 7}% clicks on ${d.name} ads for the next 3 weeks.` : 'Tough crowd. The fit ratings are now visible below.'} Problem hooks land with everyone; emotional ones win warm, niche audiences; “Learn more” gets cold audiences to click (but fewer buy).
+        </p>
+      )}
     </div>
   );
 }

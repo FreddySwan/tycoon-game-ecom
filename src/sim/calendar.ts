@@ -38,3 +38,17 @@ export function isBigBazaarlyDays(day: number): boolean {
   const d = dayOfYear(day);
   return d >= 192 && d <= 194;
 }
+
+export type PeriodKind = 'month' | 'quarter' | 'year';
+
+/** Calendar period a day falls in, with a display label. */
+export function periodOf(day: number, kind: PeriodKind): { key: number; label: string } {
+  const monthIdx = Math.floor((day - 1 + START_MONTH * MONTH) / MONTH);
+  if (kind === 'month') return { key: monthIdx, label: `${MONTH_NAMES[monthIdx % 12]} Y${Math.floor(monthIdx / 12) + 1}` };
+  if (kind === 'quarter') {
+    const q = Math.floor(monthIdx / 3);
+    return { key: q, label: `Q${(q % 4) + 1} Y${Math.floor(q / 4) + 1}` };
+  }
+  const y = Math.floor(monthIdx / 12);
+  return { key: y, label: `Year ${y + 1}` };
+}

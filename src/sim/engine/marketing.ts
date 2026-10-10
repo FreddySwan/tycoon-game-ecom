@@ -1,7 +1,8 @@
 import { CHANNELS, CREATORS, MARKETPLACES } from '../data';
-import { breakEvenCPA, creativeUnlocked, def, liveProducts, recentCPA, round2, stockQuality } from '../economics';
+import { breakEvenCPA, creativeUnlocked, def, liveProducts, orderBreakdown, recentCPA, round2, stockQuality } from '../economics';
 import { chance, pick } from '../rng';
-import type { CategoryId, ChannelId, Creative, CreativeType, GameState, Listing } from '../types';
+import type { CampaignType, CategoryId, ChannelId, Creative, CreativeType, EmailCampaign, GameState, Listing, Segment } from '../types';
+import { addReviews } from './reviews';
 import { type ActionResult, adStat, book, milestone, nextId, notify, spendOn } from './core';
 import { onStore } from './storefront';
 
@@ -56,7 +57,7 @@ export function hireCreator(s: GameState, pid: string, tierId: string): ActionRe
   if (!p.inventory.onHand) return 'Have stock before a creator sends people your way.';
   if (p.creatorBoost.length) return 'A creator campaign is already running for this product.';
   if (s.cash < tier.cost) return `Not enough cash. You need $${tier.cost.toLocaleString()}.`;
-  book(s, 'ads', tier.cost, { brandId: p.brandId, productId: pid, channel: p.listings.loopshop?.active ? 'loopshop' : 'store' });
+  book(s, 'ads', tier.cost, { brandId: p.brandId, productId: pid, channel: p.listings.loopshop?.active ? 'loopshop' : 'store', sub: 'Creator collabs' });
   adStat(s, pid, 'creator', { spend: tier.cost });
   s.creatorPosts.push({ day: s.day, productId: pid, tier: tier.id, cost: tier.cost, viral: false, handle: creatorHandle(s, def(s, pid).category) });
   const viral = chance(s, tier.viral);
@@ -75,7 +76,7 @@ export function joinChannel(s: GameState, ch: ChannelId): ActionResult {
   const c = CHANNELS[ch];
   if (s.channels[ch]?.joined) return null;
   if (s.stage < c.unlockStage) return `${c.name} opens up at stage ${c.unlockStage}.`;
-  const err = spendOn(s, 'other', c.joinCost);
+  const err = spendOn(s, 'other', c.joinCost, undefined, 'Channel setup');
   if (err) return err;
   s.channels[ch] = { joined: true, joinedDay: s.day };
   if (c.monthlyFee) s.bills.push({ id: nextId(s), dueDay: s.day + 30, label: `${c.name} seller plan`, amount: c.monthlyFee, everyDays: 30, category: 'rent' });
@@ -130,7 +131,7 @@ export function setFlow(s: GameState, brandId: number, flow: 'welcome' | 'postPu
   if (s.stage < 2) return 'Email unlocks in the Growing Brand stage.';
   const b = s.brands.find((x) => x.id === brandId)!;
   if (on && !s.flags[`flow-${brandId}-${flow}`]) {
-    const err = spendOn(s, 'other', FLOW_COST, brandId);
+    const err = spendOn(s, 'other', FLOW_COST, brandId, 'Email & CRM');
     if (err) return err;
     s.flags[`flow-${brandId}-${flow}`] = true;
   }
@@ -138,18 +139,95 @@ export function setFlow(s: GameState, brandId: number, flow: 'welcome' | 'postPu
   return null;
 }
 
-export function sendCampaign(s: GameState, brandId: number, discountPct: number): ActionResult {
+export const CAMPAIGNS: Record<CampaignType, { name: string; emoji: string; desc: string; best: Segment; fatigue: number; clickRate: number }> = {
+  promo: { name: 'Promotion', emoji: '🏷️', desc: 'A discount or offer. Sells now, but trains people to wait for sales.', best: 'vip', fatigue: 0.12, clickRate: 0.12 },
+  replenish: { name: 'Replenishment reminder', emoji: '🔁', desc: 'Time to restock? Works best for consumables and lapsed buyers.', best: 'lapsed', fatigue: 0.06, clickRate: 0.1 },
+  launch: { name: 'Product launch', emoji: '🚀', desc: 'Introduce one product to people who already trust you.', best: 'vip', fatigue: 0.08, clickRate: 0.14 },
+  review: { name: 'Review request', emoji: '⭐', desc: 'Ask recent buyers for a review. More reviews, no direct sales.', best: 'recent', fatigue: 0.04, clickRate: 0.2 },
+  story: { name: 'Brand story', emoji: '📖', desc: 'Behind the scenes, tips, no hard sell. Keeps customers warm and the list healthy.', best: 'all', fatigue: -0.04, clickRate: 0.06 },
+};
+
+export const SEGMENTS: Record<Segment, { name: string; desc: string; share: number; engage: number }> = {
+  all: { name: 'Everyone', desc: 'Your whole list', share: 1, engage: 1 },
+  recent: { name: 'Recent buyers', desc: 'Bought in the last 30 days', share: 0.25, engage: 1.2 },
+  lapsed: { name: 'Lapsed customers', desc: 'Haven’t bought in 90+ days', share: 0.45, engage: 0.6 },
+  vip: { name: 'VIP repeat buyers', desc: 'Bought 2+ times', share: 0.08, engage: 1.5 },
+};
+
+const RESPONSE: Record<CampaignType, Record<Segment, number>> = {
+  promo: { all: 0.012, recent: 0.008, lapsed: 0.01, vip: 0.03 },
+  replenish: { all: 0.008, recent: 0.006, lapsed: 0.02, vip: 0.024 },
+  launch: { all: 0.009, recent: 0.011, lapsed: 0.005, vip: 0.018 },
+  review: { all: 0, recent: 0, lapsed: 0, vip: 0 },
+  story: { all: 0.003, recent: 0.003, lapsed: 0.002, vip: 0.005 },
+};
+
+export interface CampaignPlan {
+  type: CampaignType;
+  segment: Segment;
+  discount: number;
+  productId?: string;
+}
+
+export function segmentSize(s: GameState, brandId: number, seg: Segment): number {
+  const b = s.brands.find((x) => x.id === brandId)!;
+  return Math.round(b.email.list * SEGMENTS[seg].share);
+}
+
+/** Expected orders (or reviews) from a plan, for the composer preview. */
+export function forecastCampaign(s: GameState, brandId: number, plan: CampaignPlan): { sent: number; orders: number; reviews: number } {
+  const b = s.brands.find((x) => x.id === brandId)!;
+  const sent = segmentSize(s, brandId, plan.segment);
+  const pids = Object.keys(s.products).filter((id) => s.products[id].brandId === brandId && !s.products[id].retired);
+  const repeatability = pids.length ? pids.reduce((a, id) => a + def(s, id).repeatability, 0) / pids.length : 0.5;
+  let rate = RESPONSE[plan.type][plan.segment] * (1 - b.email.fatigue);
+  if (plan.type === 'promo') rate *= 1 + plan.discount / 25;
+  if (plan.type === 'replenish') rate *= repeatability;
+  const reviewRate = { all: 0.02, recent: 0.06, lapsed: 0.008, vip: 0.05 }[plan.segment];
+  return { sent, orders: sent * rate, reviews: plan.type === 'review' ? sent * reviewRate * (1 - b.email.fatigue) : 0 };
+}
+
+export function sendCampaign(s: GameState, brandId: number, plan: CampaignPlan): ActionResult {
   if (s.stage < 2) return 'Email unlocks in the Growing Brand stage.';
   const b = s.brands.find((x) => x.id === brandId)!;
   if (b.email.list < 100) return 'Build your list to 100+ subscribers first.';
   if (s.day - b.email.lastCampaign < 7) return 'One campaign a week, or people unsubscribe.';
-  const orders = b.email.list * 0.012 * (discountPct ? 1 + discountPct / 25 : 1) * (1 - b.email.fatigue);
-  b.email.pending = [orders * 0.5, orders * 0.3, orders * 0.2];
+  if (plan.type === 'launch' && (!plan.productId || !s.products[plan.productId])) return 'Pick the product to launch.';
+  const meta = CAMPAIGNS[plan.type];
+  const f = forecastCampaign(s, brandId, plan);
+  if (f.sent < 20) return 'That segment is too small to email yet.';
+  const id = nextId(s);
+  const engage = SEGMENTS[plan.segment].engage;
+  const opens = Math.round(f.sent * Math.max(0.05, 0.35 - b.email.fatigue * 0.3) * engage);
+  const clicks = Math.round(opens * meta.clickRate);
+  const broad = plan.segment === 'all' ? 1.5 : 1;
+  const unsub = Math.round(f.sent * (0.002 + Math.max(0, b.email.fatigue) * 0.01) * broad);
+  const cost = round2(f.sent * 0.003);
+  book(s, 'other', cost, { brandId, sub: 'Email & CRM' });
+  const camp: EmailCampaign = { id, day: s.day, brandId, type: plan.type, segment: plan.segment, discount: plan.type === 'promo' ? plan.discount : 0, productId: plan.productId, sent: f.sent, opens, clicks, unsubscribes: unsub, orders: 0, revenue: 0, reviews: 0, cost };
+  s.emails.push(camp);
+  if (s.emails.length > 40) s.emails.shift();
+  if (f.orders > 0) (b.email.queue ??= []).push({ id, days: [f.orders * 0.5, f.orders * 0.3, f.orders * 0.2], productId: plan.type === 'launch' ? plan.productId : undefined, discount: camp.discount });
+  if (plan.type === 'review') {
+    const pids = Object.keys(s.products).filter((pid) => s.products[pid].brandId === brandId && s.products[pid].sold > 0);
+    let total = 0;
+    for (const pid of pids) {
+      const n = Math.round((f.reviews * s.products[pid].sold) / Math.max(1, pids.reduce((a, x) => a + s.products[x].sold, 0)));
+      const q = stockQuality(s, pid);
+      addReviews(s, pid, n, Math.min(4.9, 1.6 + 3.6 * q + (b.thankYouCard ? 0.25 : 0) + (b.packaging === 'branded' ? 0.15 : 0)));
+      total += n;
+    }
+    camp.reviews = total;
+  }
+  if (plan.type === 'story') {
+    b.customers *= 1.02;
+    b.awareness += f.sent * 0.05;
+  }
+  if (plan.type === 'launch' && plan.productId) b.awareness += f.sent * 0.03;
   b.email.lastCampaign = s.day;
-  b.email.fatigue = Math.min(0.6, b.email.fatigue + 0.12 + discountPct / 200);
-  s.counters[`campaignDiscount-${brandId}`] = discountPct;
-  b.email.list = Math.round(b.email.list * 0.997);
-  notify(s, 'info', `📧 Campaign sent to ${b.email.list.toLocaleString()} subscribers${discountPct ? ` with ${discountPct}% off` : ''}.`);
+  b.email.fatigue = Math.max(0, Math.min(0.6, b.email.fatigue + (meta.fatigue + (plan.type === 'promo' ? plan.discount / 200 : 0)) * broad));
+  b.email.list = Math.max(0, b.email.list - unsub);
+  notify(s, 'info', `📧 ${meta.name} sent to ${f.sent.toLocaleString()} ${SEGMENTS[plan.segment].name.toLowerCase()}.`);
   return null;
 }
 
@@ -161,6 +239,17 @@ export function setCreative(s: GameState, pid: string, type: CreativeType, patch
   Object.assign(p.creatives[type], patch);
   // A new creative restarts learning: fatigue resets.
   for (const c of Object.values(p.ads)) if (c.creative === type) c.daysActive = 0;
+  return null;
+}
+
+/** Finish the ad-angle test: matching hooks to audiences gives a fresh-angle click boost for three weeks. */
+export function completeAngleTest(s: GameState, pid: string, score: number): ActionResult {
+  if (!s.products[pid]) return 'Unknown product.';
+  s.angleTested[pid] = Math.max(s.angleTested[pid] ?? 0, score);
+  if (score > 0) {
+    s.modifiers = (s.modifiers ?? []).filter((m) => !(m.key === 'adCtr' && m.scope === pid && m.label === 'Fresh angle'));
+    s.modifiers.push({ id: nextId(s), key: 'adCtr', scope: pid, mult: 1 + 0.07 * score, until: s.day + 21, label: 'Fresh angle' });
+  }
   return null;
 }
 
@@ -243,6 +332,49 @@ export function marketerPass(s: GameState): void {
       if (p.search.active) knobs.push({ get: () => p.search.budget, set: (v) => (p.search.budget = v), cpa: recentCPA(p.search, 5).cpa });
     }
   }
+  // Marketplaces: sponsored listings and lightning deals, judged against each marketplace's own margin.
+  let deals = 0;
+  for (const pid of liveProducts(s)) {
+    const p = s.products[pid];
+    if (!p.inventory.onHand) continue;
+    for (const ch of MARKETPLACES) {
+      const l = p.listings[ch];
+      if (!l?.active || !s.channels[ch]?.joined) continue;
+      const be = orderBreakdown(s, pid, false, ch).contribution;
+      if (be <= 0) {
+        if (l.sponsored) {
+          l.sponsored = 0;
+          paused++;
+        }
+        continue;
+      }
+      const target = be * (1 - s.adPolicy.marginPct / 100);
+      const r = recentCPA({ history: l.adHistory ?? [] }, 5);
+      const enough = r.orders >= 3 || r.spend >= be * 2;
+      if (!l.sponsored) {
+        const neverTried = !l.adHistory?.length;
+        if (neverTried || (s.day % 14 === 0 && l.rank < 0.6)) {
+          l.sponsored = 20;
+          launched++;
+        }
+      } else if (enough && (r.cpa === null || r.cpa > be)) {
+        l.sponsored = 0;
+        paused++;
+      } else if (enough && r.cpa !== null && r.cpa < target) {
+        l.sponsored = Math.min(3000, Math.round(l.sponsored * 1.2 + 2));
+        scaled++;
+      }
+      if (l.sponsored) knobs.push({ get: () => l.sponsored, set: (v) => (l.sponsored = v), cpa: r.cpa });
+      // Lightning deal when rank is sagging and 20% off still leaves a profit.
+      const price = l.price;
+      if (l.promoCooldown <= s.day && l.promoUntil < s.day && l.rank < 0.6 && be - price * 0.2 > 0) {
+        l.promoUntil = s.day + 2;
+        l.promoCooldown = s.day + 30;
+        deals++;
+      }
+    }
+  }
+
   // Keep total spend under the cap, trimming the least efficient budgets first.
   const cap = adCap(s);
   let total = knobs.reduce((a, k) => a + k.get(), 0);
@@ -258,6 +390,6 @@ export function marketerPass(s: GameState): void {
     }
   }
   if (s.day % 7 === 0 && (paused || scaled || launched)) {
-    notify(s, 'team', `📈 ${s.people.find((x) => x.role === 'marketer')?.name ?? 'Your marketer'} this week: scaled ${scaled} winners, paused ${paused} losers, launched ${launched} tests. Spend cap $${Math.round(cap).toLocaleString()}/day.`);
+    notify(s, 'team', `📈 ${s.people.find((x) => x.role === 'marketer')?.name ?? 'Your marketer'} this week: scaled ${scaled} winners, paused ${paused} losers, launched ${launched} tests${deals ? `, ran ${deals} lightning deals` : ''}. Spend cap $${Math.round(cap).toLocaleString()}/day.`);
   }
 }

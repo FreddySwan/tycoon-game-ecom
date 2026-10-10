@@ -1,9 +1,9 @@
 import { dayOfYear } from '../calendar';
 import { CREATORS, ROLES, SUPPLIERS, SUPPLIER_ORDER, WHOLESALE_ACCOUNTS } from '../data';
-import { activeContract, avgDailyOrders, def, effectivePrice, freightPerUnit, liveProducts, listPrice, round2, trailing } from '../economics';
+import { activeContract, adTrailing, avgDailyOrders, def, effectivePrice, freightPerUnit, liveProducts, listPrice, orderPace, productTrailing, round2, sliceProfit, trailing } from '../economics';
 import { chance, pick, randInt } from '../rng';
-import type { CardChoice, GameEvent, GameState, RoleId, SupplierId } from '../types';
-import { type ActionResult, adStat, book, milestone, nextId, notify, spendCash } from './core';
+import type { CardChoice, GameEvent, GameState, ModKey, RoleId, SupplierId } from '../types';
+import { type ActionResult, adStat, book, milestone, nextId, notify, spendCash, spendOn } from './core';
 import { creatorHandle } from './marketing';
 import { giveRaise } from './ops';
 import { resolveCashCrisis } from './company';
@@ -249,6 +249,8 @@ export function rollEvents(s: GameState): void {
     });
   }
 
+  rollOffers(s);
+
   // Auto-resolve expired events with their last (default) choice.
   for (const ev of [...s.events]) {
     if (ev.expiresDay !== undefined && s.day > ev.expiresDay) resolveEvent(s, ev.id, ev.choices[ev.choices.length - 1].id);
@@ -262,6 +264,12 @@ export function resolveEvent(s: GameState, eventId: number, choiceId: string): A
   if (!ev) return 'Already handled.';
   const d = ev.data ?? {};
   const pid = d.pid as string | undefined;
+  if (ev.kind.startsWith('offer-')) {
+    const err = resolveOffer(s, ev, choiceId);
+    if (err) return err;
+    s.events = s.events.filter((e) => e.id !== eventId);
+    return null;
+  }
   switch (ev.kind) {
     case 'cash-crisis':
       resolveCashCrisis(s, choiceId);
@@ -315,7 +323,7 @@ export function resolveEvent(s: GameState, eventId: number, choiceId: string): A
         s.products[pid].copycat = 0.08;
       } else if (choiceId === 'brand') {
         if (s.cash < 2000 * s.stage) return `Not enough cash. You need $${(2000 * s.stage).toLocaleString()}.`;
-        book(s, 'ads', 2000 * s.stage, { brandId: s.products[pid].brandId, productId: pid });
+        book(s, 'ads', 2000 * s.stage, { brandId: s.products[pid].brandId, productId: pid, sub: 'Brand content' });
         s.products[pid].copycat = 0.07;
       }
       break;
@@ -382,7 +390,7 @@ export function resolveEvent(s: GameState, eventId: number, choiceId: string): A
     case 'creator-dm':
       if (choiceId === 'accept' && pid && s.products[pid]) {
         if (s.cash < 800) return 'Not enough cash. You need $800.';
-        book(s, 'ads', 800, { brandId: s.products[pid].brandId, productId: pid, channel: 'store' });
+        book(s, 'ads', 800, { brandId: s.products[pid].brandId, productId: pid, channel: 'store', sub: 'Creator collabs' });
         adStat(s, pid, 'creator', { spend: 800 });
         const tier = CREATORS[1];
         const viral = chance(s, tier.viral);
@@ -432,3 +440,264 @@ export function randomShipDelay(s: GameState, supplierId: SupplierId): number {
   return chance(s, 1 - SUPPLIERS[supplierId].reliability) ? randInt(s, 2, 5) : 0;
 }
 
+
+// ───────────────────────────── business offers ─────────────────────────────
+
+export function addMod(s: GameState, key: ModKey, mult: number, days: number, label: string, scope?: string): void {
+  s.modifiers = (s.modifiers ?? []).filter((m) => m.until >= s.day);
+  s.modifiers.push({ id: nextId(s), key, mult, until: s.day + days, label, scope });
+}
+
+function offer(s: GameState, key: string, cooldown: number, p: number, ev: Omit<NewEvent, 'blocking'>): boolean {
+  if (open(s, ev.kind) || !cooled(s, key, cooldown) || !chance(s, p)) return false;
+  cool(s, key);
+  pushEvent(s, { ...ev, blocking: false });
+  return true;
+}
+
+/** Deals that land in the inbox: credit, suppliers, agencies, logistics, tools, buyers. Each one is a trade-off. */
+function rollOffers(s: GameState): void {
+  const live = liveProducts(s).filter((id) => s.products[id].sold > 0);
+  if (!live.length) return;
+  const ads = adTrailing(s, 30).total;
+  const accrued = Object.values(s.channelAccrued).reduce((a, v) => a + (v ?? 0), 0);
+  const exp = s.day + 6;
+
+  if (s.credit.unlocked)
+    offer(s, 'o-bank', 150, 0.012, {
+      kind: 'offer-bank',
+      title: 'Harbor Bank wants your business',
+      body: `A bigger credit line: 1.5× your limit and 1.2% interest instead of 1.5%, for 6 months. Arrangement fee: $250.`,
+      expiresDay: exp,
+      choices: [c('accept', 'Take the better line ($250)', 'More room for stock and payroll'), c('decline', 'No thanks', 'Keep it simple')],
+    });
+
+  if (s.stage >= 2 && accrued >= 3000 && s.cash < accrued)
+    offer(s, 'o-invoice', 45, 0.05, {
+      kind: 'offer-invoice',
+      title: 'Get paid today?',
+      body: `PayBridge offers to advance your $${Math.round(accrued).toLocaleString()} of pending channel payouts right now, for a 3% fee ($${Math.round(accrued * 0.03).toLocaleString()}).`,
+      expiresDay: s.day + 3,
+      choices: [c('accept', `Take $${Math.round(accrued * 0.97).toLocaleString()} now`, 'Cash today, slightly less of it'), c('decline', 'Wait for payouts', 'Free, but slower')],
+      data: { amount: Math.round(accrued) },
+    });
+
+  const usedSup = SUPPLIER_ORDER.filter((id) => s.supplierUnits[id] > 0);
+  if (usedSup.length) {
+    const sup = pick(s, usedSup);
+    const moq = Math.max(2000, SUPPLIERS[sup].moq * 2);
+    offer(s, 'o-factory', 80, 0.018, {
+      kind: 'offer-factory',
+      title: `${SUPPLIERS[sup].company}: volume discount`,
+      body: `${SUPPLIERS[sup].contact}: “12% off everything you order from us for 30 days, if you commit to at least ${moq.toLocaleString()} units in that time. Miss it and I’ll be disappointed.”`,
+      expiresDay: exp,
+      choices: [c('accept', `Commit to ${moq.toLocaleString()} units`, '12% off for 30 days'), c('decline', 'Not now', 'No commitment')],
+      data: { sup, moq },
+    });
+    if (s.relationship[sup] >= 60 && SUPPLIERS[sup].quality < 0.95)
+      offer(s, 'o-premium', 150, 0.012, {
+        kind: 'offer-premium',
+        title: `${SUPPLIERS[sup].company}: premium materials`,
+        body: `Upgrade to thicker, better-finished materials: +4% unit cost, about +8% quality (fewer defects, better reviews) for 6 months.`,
+        expiresDay: exp,
+        choices: [c('accept', 'Upgrade materials', '+4% cost, +8% quality'), c('decline', 'Keep current spec', 'Cheaper')],
+        data: { sup },
+      });
+  }
+
+  if (s.stage >= 2 && ads.scrollr.spend >= 2500)
+    offer(s, 'o-agency', 120, 0.015, {
+      kind: 'offer-agency',
+      title: 'Spark & Co. pitches to run your ads',
+      body: `A growth agency promises better creatives and targeting: about +25% click rates for 60 days. They want either 12% of your ad spend, or a flat $2,000 retainer for +20%.`,
+      expiresDay: exp,
+      choices: [c('percent', '12% of ad spend', '+25% clicks, cost scales with spend'), c('retainer', '$2,000 retainer', '+20% clicks, fixed cost'), c('decline', 'Keep it in-house', 'No fees')],
+    });
+
+  if (ads.scrollr.spend >= 400)
+    offer(s, 'o-scrollr', 100, 0.015, {
+      kind: 'offer-scrollr',
+      title: 'Scrollr Partner Program',
+      body: 'Scrollr invites you to its partner program: 15% off ad costs on all your social and search ads for 60 days. Onboarding fee: $300.',
+      expiresDay: exp,
+      choices: [c('accept', 'Join ($300)', 'Worth it above ~$2k of spend'), c('decline', 'Pass', 'Keep the $300')],
+    });
+
+  if (s.stage >= 2 && s.pos.some((p) => p.freight === 'sea'))
+    offer(s, 'o-freight', 120, 0.015, {
+      kind: 'offer-freight',
+      title: 'BlueLane: sea freight contract',
+      body: '25% off sea freight on every order for 90 days, for a $1,200 commitment fee.',
+      expiresDay: exp,
+      choices: [c('accept', 'Sign ($1,200)', '−25% sea freight'), c('decline', 'Pass', 'Pay spot rates')],
+    });
+
+  if (s.stage >= 2 && orderPace(s, 14).own >= 25)
+    offer(s, 'o-carrier', 180, 0.012, {
+      kind: 'offer-carrier',
+      title: 'ParcelPro wants your volume',
+      body: '15% off what you pay to ship orders to customers for 6 months. The catch: their ground network adds a day, and slower shipping costs a little conversion.',
+      expiresDay: exp,
+      choices: [c('accept', 'Switch carriers', '−15% shipping, −2% conversion'), c('decline', 'Stay put', 'Faster delivery')],
+    });
+
+  if (s.stage >= 2)
+    offer(s, 'o-boxes', 150, 0.012, {
+      kind: 'offer-boxes',
+      title: 'BoxCraft packaging deal',
+      body: 'A packaging supplier offers 30% off your boxes and mailers for 6 months. One-time setup: $500.',
+      expiresDay: exp,
+      choices: [c('accept', 'Take it ($500)', '−30% packaging'), c('decline', 'Pass', 'Keep current supplier')],
+    });
+
+  if (s.stage >= 2)
+    offer(s, 'o-cro', 150, 0.012, {
+      kind: 'offer-cro',
+      title: 'CheckoutLift: conversion app',
+      body: 'A checkout-optimization app claims +6% conversion on every channel you control. $1,200 for 6 months.',
+      expiresDay: exp,
+      choices: [c('accept', 'Install ($1,200)', '+6% conversion'), c('decline', 'Pass', 'Keep the cash')],
+    });
+
+  if (s.stage >= 2 && live.length >= 2)
+    offer(s, 'o-creators', 100, 0.012, {
+      kind: 'offer-creators',
+      title: 'Influencer agency bundle',
+      body: `An agency offers 5 micro-creator posts spread across your products for $1,000 (normally $1,500).`,
+      expiresDay: exp,
+      choices: [c('accept', 'Book the bundle ($1,000)', 'Traffic spikes + UGC ads'), c('decline', 'Pass', 'Not now')],
+    });
+
+  if (s.stage >= 3 && live.length >= 3) {
+    const pl = productTrailing(s, 90);
+    const best = live.filter((id) => (pl[id] ? sliceProfit(pl[id]) : 0) > 0).sort((a, b) => sliceProfit(pl[b]) - sliceProfit(pl[a]))[1];
+    if (best) {
+      const price = Math.round((sliceProfit(pl[best]) * 4 * 2 + s.products[best].inventory.costTotal) / 1000) * 1000;
+      offer(s, 'o-acquire', 200, 0.008, {
+        kind: 'offer-acquire',
+        title: `Offer to buy your ${def(s, best).name} line`,
+        body: `A larger brand offers $${price.toLocaleString()} for the whole ${def(s, best).name} line (about 2 years of its current profit, plus your stock at cost). You’d stop selling it.`,
+        expiresDay: s.day + 8,
+        choices: [c('accept', `Sell for $${price.toLocaleString()}`, 'Cash now, smaller business'), c('decline', 'Keep building it', 'It’s worth more to you')],
+        data: { pid: best, price },
+      });
+    }
+  }
+
+  // Broken commitments come back to bite.
+  for (const sup of SUPPLIER_ORDER) {
+    const due = s.counters[`commit-${sup}`];
+    if (due && s.day === due) {
+      const need = s.counters[`commitQty-${sup}`] ?? 0;
+      const got = s.supplierUnits[sup] - (s.counters[`commitBase-${sup}`] ?? 0);
+      if (got < need) {
+        s.relationship[sup] = Math.max(0, s.relationship[sup] - 15);
+        notify(s, 'po', `${SUPPLIERS[sup].contact} is disappointed: you committed to ${need.toLocaleString()} units and ordered ${got.toLocaleString()}. Relationship −15.`, true);
+      } else notify(s, 'po', `${SUPPLIERS[sup].contact}: “Thank you for keeping your word!” Relationship +5.`);
+      if (got >= need) s.relationship[sup] = Math.min(100, s.relationship[sup] + 5);
+    }
+  }
+}
+
+function resolveOffer(s: GameState, ev: GameEvent, choiceId: string): ActionResult {
+  const d = ev.data ?? {};
+  if (choiceId === 'decline') return null;
+  const pay = (amount: number, sub: string) => spendOn(s, 'other', amount, undefined, sub);
+  switch (ev.kind) {
+    case 'offer-bank': {
+      const err = pay(250, 'Bank fees');
+      if (err) return err;
+      addMod(s, 'creditLimit', 1.5, 180, 'Harbor Bank line');
+      addMod(s, 'creditRate', 0.8, 180, 'Harbor Bank line');
+      break;
+    }
+    case 'offer-invoice': {
+      const amount = Object.values(s.channelAccrued).reduce((a, v) => a + (v ?? 0), 0);
+      for (const k of Object.keys(s.channelAccrued)) s.channelAccrued[k as keyof typeof s.channelAccrued] = 0;
+      s.cash = round2(s.cash + amount);
+      book(s, 'interest', round2(amount * 0.03), { sub: 'Invoice financing' });
+      break;
+    }
+    case 'offer-factory': {
+      const sup = d.sup as SupplierId;
+      addMod(s, 'unitCost', 0.88, 30, `${SUPPLIERS[sup].company} volume deal`, sup);
+      s.counters[`commit-${sup}`] = s.day + 30;
+      s.counters[`commitQty-${sup}`] = d.moq as number;
+      s.counters[`commitBase-${sup}`] = s.supplierUnits[sup];
+      break;
+    }
+    case 'offer-premium': {
+      const sup = d.sup as SupplierId;
+      addMod(s, 'unitCost', 1.04, 180, 'Premium materials', sup);
+      addMod(s, 'quality', 1.08, 180, 'Premium materials', sup);
+      break;
+    }
+    case 'offer-agency':
+      if (choiceId === 'retainer') {
+        const err = spendOn(s, 'ads', 2000, undefined, 'Agency fees');
+        if (err) return err;
+        addMod(s, 'adCtr', 1.2, 60, 'Spark & Co. (retainer)');
+      } else {
+        addMod(s, 'adCtr', 1.25, 60, 'Spark & Co.');
+        addMod(s, 'adCost', 1.12, 60, 'Spark & Co. fee');
+      }
+      break;
+    case 'offer-scrollr': {
+      const err = pay(300, 'Partner programs');
+      if (err) return err;
+      addMod(s, 'adCost', 0.85, 60, 'Scrollr Partner Program');
+      break;
+    }
+    case 'offer-freight': {
+      const err = pay(1200, 'Freight contracts');
+      if (err) return err;
+      addMod(s, 'seaFreight', 0.75, 90, 'BlueLane contract');
+      break;
+    }
+    case 'offer-carrier':
+      addMod(s, 'shipping', 0.85, 180, 'ParcelPro');
+      addMod(s, 'cvr', 0.98, 180, 'Slower ground shipping');
+      break;
+    case 'offer-boxes': {
+      const err = pay(500, 'Packaging setup');
+      if (err) return err;
+      addMod(s, 'packaging', 0.7, 180, 'BoxCraft');
+      break;
+    }
+    case 'offer-cro': {
+      const err = pay(1200, 'Software');
+      if (err) return err;
+      addMod(s, 'cvr', 1.06, 180, 'CheckoutLift');
+      break;
+    }
+    case 'offer-creators': {
+      if (s.cash < 1000) return 'Not enough cash. You need $1,000.';
+      const ids = liveProducts(s).filter((id) => s.products[id].inventory.onHand > 0 && !s.products[id].creatorBoost.length).slice(0, 5);
+      for (const id of ids) {
+        const p = s.products[id];
+        book(s, 'ads', 1000 / ids.length, { brandId: p.brandId, productId: id, channel: 'store', sub: 'Creator collabs' });
+        adStat(s, id, 'creator', { spend: 1000 / ids.length });
+        p.creatorBoost = [300, 600, 360, 180, 90];
+        p.ugc = true;
+        s.creatorPosts.push({ day: s.day, productId: id, tier: 'micro', cost: Math.round(1000 / ids.length), viral: false, handle: creatorHandle(s, def(s, id).category) });
+      }
+      break;
+    }
+    case 'offer-acquire': {
+      const pid = d.pid as string;
+      if (!s.products[pid]) break;
+      const stock = s.products[pid].inventory.costTotal;
+      s.products[pid].inventory = { onHand: 0, costTotal: 0, qualityTotal: 0 };
+      s.products[pid].retired = true;
+      for (const cell of Object.values(s.products[pid].ads)) cell.active = false;
+      s.products[pid].search.active = false;
+      for (const l of Object.values(s.products[pid].listings)) if (l) l.active = false;
+      const price = d.price as number;
+      s.cash = round2(s.cash + price);
+      book(s, 'other', -(price - stock), { cash: false, sub: 'Product line sale (gain)' });
+      notify(s, 'cash', `Sold the ${def(s, pid).name} line for $${price.toLocaleString()}.`, true);
+      break;
+    }
+  }
+  return null;
+}

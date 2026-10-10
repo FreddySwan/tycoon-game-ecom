@@ -1,4 +1,6 @@
-import { MODULES, STORE_SUBSCRIPTION } from '../../sim/data';
+import { Fragment } from 'react';
+import { MODULES, STORE_SUBSCRIPTION, VIBES } from '../../sim/data';
+import type { ModuleId } from '../../sim/types';
 import { averageRating, def, trustBreakdown } from '../../sim/economics';
 import { canShoot, hirePhotographer, launchProblems, launchStore, onStore, setBrandName, setModule, toggleBenefit } from '../../sim/engine';
 import { useGame } from '../../state/store';
@@ -6,6 +8,7 @@ import { AppTitle, Meter } from '../bits';
 import { money, stars } from '../format';
 import { ProductPicker, useProduct } from '../ProductPicker';
 import { ProductImage, ProductShot } from '../photos';
+import { LayoutBuilder } from '../Startup';
 
 export function ShopBloc() {
   const game = useGame((s) => s.game);
@@ -64,6 +67,7 @@ export function ShopBloc() {
               </div>
             );
           })}
+          {Object.values(brand.store.modules).some((t) => t > 0) && <LayoutBuilder brand={brand} />}
           {!brand.store.launched && (
             <div style={{ marginTop: 12 }}>
               {problems.length > 0 && <p className="tiny muted">To launch: {problems.join(' · ')}</p>}
@@ -109,8 +113,9 @@ export function ShopBloc() {
         </p>
         <div className="options">
           {d.benefits.map((b) => (
-            <button key={b.id} className={p.benefits.includes(b.id) ? 'on' : ''} onClick={() => act(toggleBenefit, pid, b.id)}>
+            <button key={b.id} className={p.benefits.includes(b.id) ? 'on' : ''} onClick={() => act(toggleBenefit, pid, b.id)} title={game.positioning[pid] === b.id ? 'Answers the #1 complaint about rivals' : ''}>
               {b.text}
+              {game.positioning[pid] === b.id && ' 🎯'}
             </button>
           ))}
         </div>
@@ -138,53 +143,66 @@ export function ShopBloc() {
     const p = game.products[pid];
     const d = def(game, pid);
     const m = brand.store.modules;
+    const theme = VIBES[brand.theme ?? 'minimal'];
     const doubts: string[] = [];
     if (!m.shipping) doubts.push('“When will it arrive?”');
     if (!m.badges) doubts.push('“Is checkout safe?”');
     if (!m.reviews || !p.reviews.count) doubts.push('“Has anyone bought this?”');
     if (p.photoStars && p.photoStars < 3) doubts.push('“The photo looks cheap.”');
+    const blocks: Partial<Record<ModuleId, React.ReactNode>> = {
+      header: (
+        <div className="blk" style={{ fontWeight: 800, background: brand.theme ? theme.color : m.header === 2 ? '#2b2d42' : undefined, color: brand.theme ? theme.accent : m.header === 2 ? '#fff' : undefined, fontFamily: brand.theme ? theme.font : undefined }}>
+          {m.header === 2 ? '✦ ' : ''}
+          {brand.name || 'Your Brand'}
+        </div>
+      ),
+      hero: (
+        <div className="blk" style={{ padding: 0, overflow: 'hidden' }}>
+          {p.photo ? (
+            <ProductShot game={game} pid={pid} choice={p.photo} height={150}>
+              {m.hero === 2 && <span style={{ position: 'absolute', right: 8, bottom: 6, fontSize: 22 }}>▶️</span>}
+            </ProductShot>
+          ) : (
+            <div className="hero">No photo yet</div>
+          )}
+        </div>
+      ),
+      gallery: (
+        <div className="blk row" style={{ gap: 4 }}>
+          {[0, 1, 2].map((i) => (
+            <ProductImage key={i} game={game} pid={pid} index={i} size={48} round={6} style={m.gallery === 2 ? undefined : { filter: 'saturate(0.8) brightness(0.95)' }} />
+          ))}
+          {m.gallery === 2 && <span className="tiny muted">pro shots</span>}
+        </div>
+      ),
+      description: (
+        <div className="blk">
+          <b>{d.name}</b> · ${p.price}
+          <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+            {p.benefits.map((id) => (
+              <li key={id}>
+                {d.benefits.find((b) => b.id === id)?.text}
+                {game.positioning[pid] === id && ' 🎯'}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ),
+      reviews: <div className="blk">{p.reviews.count ? `${'★'.repeat(Math.round(averageRating(game, pid)))} ${p.reviews.count} reviews` : 'No reviews yet'}</div>,
+      badges: <div className="blk">🛡 Secure checkout · 30-day money back</div>,
+      faq: <div className="blk">❓ FAQ</div>,
+      shipping: <div className="blk">🚚 Ships in 1–2 days{m.shipping === 2 ? ' · Free returns' : ''}</div>,
+      checkout: <div className="blk" style={{ background: brand.theme ? theme.accent : '#f0a860', color: '#fff', fontWeight: 800, textAlign: 'center' }}>{m.checkout === 2 ? ' Pay · Buy now' : 'Add to cart'}</div>,
+    };
+    const active = MODULES.filter((x) => m[x.id] > 0).map((x) => x.id);
+    const saved = (brand.store.order ?? []).filter((x) => active.includes(x));
+    const order = [...saved, ...active.filter((x) => !saved.includes(x))];
     return (
       <div className="preview">
         <div className="bar">🔒 {(brand.name || 'yourbrand').toLowerCase().replace(/\s+/g, '')}.shopbloc.com</div>
-        {m.header > 0 && (
-          <div className="blk" style={{ fontWeight: 800, background: m.header === 2 ? '#2b2d42' : undefined, color: m.header === 2 ? '#fff' : undefined }}>
-            {m.header === 2 ? '✦ ' : ''}
-            {brand.name || 'Your Brand'}
-          </div>
-        )}
-        {m.hero > 0 && (
-          <div className="blk" style={{ padding: 0, overflow: 'hidden' }}>
-            {p.photo ? (
-              <ProductShot game={game} pid={pid} choice={p.photo} height={150}>
-                {m.hero === 2 && <span style={{ position: 'absolute', right: 8, bottom: 6, fontSize: 22 }}>▶️</span>}
-              </ProductShot>
-            ) : (
-              <div className="hero">No photo yet</div>
-            )}
-          </div>
-        )}
-        {m.gallery > 0 && (
-          <div className="blk row" style={{ gap: 4 }}>
-            {[0, 1, 2].map((i) => (
-              <ProductImage key={i} game={game} pid={pid} index={i} size={48} round={6} style={m.gallery === 2 ? undefined : { filter: 'saturate(0.8) brightness(0.95)' }} />
-            ))}
-            {m.gallery === 2 && <span className="tiny muted">pro shots</span>}
-          </div>
-        )}
-        <div className="blk">
-          <b>{d.name}</b> · ${p.price}
-          {m.description > 0 && (
-            <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
-              {p.benefits.map((id) => (
-                <li key={id}>{d.benefits.find((b) => b.id === id)?.text}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-        {m.reviews > 0 && <div className="blk">{p.reviews.count ? `${'★'.repeat(Math.round(averageRating(game, pid)))} ${p.reviews.count} reviews` : 'No reviews yet'}</div>}
-        {m.badges > 0 && <div className="blk">🛡 Secure checkout · 30-day money back</div>}
-        {m.shipping > 0 && <div className="blk">🚚 Ships in 1–2 days{m.shipping === 2 ? ' · Free returns' : ''}</div>}
-        {m.checkout > 0 && <div className="blk" style={{ background: '#f0a860', color: '#fff', fontWeight: 800, textAlign: 'center' }}>{m.checkout === 2 ? ' Pay · Buy now' : 'Add to cart'}</div>}
+        {order.map((id) => (
+          <Fragment key={id}>{blocks[id]}</Fragment>
+        ))}
         {doubts.length > 0 && <div className="blk tiny" style={{ background: '#fff4d6' }}>🤔 Shopper doubts: {doubts.join(' ')}</div>}
       </div>
     );

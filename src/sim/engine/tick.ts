@@ -1,5 +1,5 @@
 import { cpmSeason, isBigBazaarlyDays } from '../calendar';
-import { CHANNELS, HOURS, MARKETPLACES, OVERHEAD_RATE, PAYROLL_EVERY, SUPPLIERS, THIRD_PARTY } from '../data';
+import { CHANNELS, HOURS, MARKETPLACES, OVERHEAD_RATE, PAYROLL_EVERY, ROLE_TEAM, SUPPLIERS, THIRD_PARTY } from '../data';
 import {
   averageRating,
   avgDailyOrders,
@@ -16,6 +16,8 @@ import {
   intlFactor,
   intlShare,
   liveProducts,
+  mod,
+  payrollByRole,
   payrollMonthly,
   priceFactor,
   profitOf,
@@ -32,7 +34,7 @@ import {
   copycatMult,
 } from '../economics';
 import { binomial, chance, poisson, rand } from '../rng';
-import type { BacklogBucket, ChannelId, DailyRecord, GameState, OrderSource } from '../types';
+import type { BacklogBucket, ChannelId, DailyRecord, GameState, OrderSource, RoleId } from '../types';
 import { adStat, book, countSource, milestone, MILESTONE_LABELS, notify, randomCustomer, slice, today } from './core';
 import { brandManaged, cashCrisis, chargeInterest, checkAmbitions, checkStageOffer, runLab, updateCredit } from './company';
 import { reorderDelayEvent, rollEvents, randomShipDelay } from './events';
@@ -198,7 +200,7 @@ function arrivals(s: GameState): void {
 function billsAndPayouts(s: GameState): void {
   for (const bill of [...s.bills]) {
     if (bill.dueDay !== s.day) continue;
-    book(s, bill.category, bill.amount);
+    book(s, bill.category, bill.amount, { sub: bill.label.startsWith('Rent') ? 'Rent' : bill.label });
     if (bill.amount >= 500) notify(s, 'cash', `Paid ${bill.label}: −$${bill.amount.toLocaleString()}.`);
     if (bill.everyDays) bill.dueDay += bill.everyDays;
     else s.bills = s.bills.filter((b) => b.id !== bill.id);
@@ -206,29 +208,29 @@ function billsAndPayouts(s: GameState): void {
   if (s.day % PAYROLL_EVERY === 0) {
     const pay = round2((payrollMonthly(s) * PAYROLL_EVERY) / 30);
     if (pay > 0) {
-      book(s, 'payroll', pay);
+      for (const [role, amount] of Object.entries(payrollByRole(s))) if (amount > 0) book(s, 'payroll', round2((amount * PAYROLL_EVERY) / 30), { sub: ROLE_TEAM[role as RoleId] });
       notify(s, 'cash', `Payroll: −$${Math.round(pay).toLocaleString()}.`);
     }
   }
   if (s.day % 30 === 0 && OVERHEAD_RATE[s.stage] > 0) {
     const overhead = round2(trailing(s, 30).revenue * OVERHEAD_RATE[s.stage]);
     if (overhead > 0) {
-      book(s, 'other', overhead);
+      book(s, 'other', overhead, { sub: 'Admin & overhead' });
       notify(s, 'cash', `Admin & overhead (software, insurance, accounting, legal): −$${Math.round(overhead).toLocaleString()}.`);
     }
   }
   if (s.thirdParty && s.day % 30 === 0) {
     const units = Object.keys(s.products).reduce((a, id) => a + s.products[id].inventory.onHand * def(s, id).size, 0);
-    book(s, 'rent', round2(units * THIRD_PARTY.storagePerUnitMonth));
+    book(s, 'rent', round2(units * THIRD_PARTY.storagePerUnitMonth), { sub: '3PL storage' });
   }
   const over = storageUsed(s) - storageCapacity(s);
   if (over > 0) {
-    book(s, 'rent', round2(over * 0.05));
+    book(s, 'rent', round2(over * 0.05), { sub: 'Overflow storage' });
     if (s.day % 7 === 0) notify(s, 'info', `📦 You’re ${Math.round(over).toLocaleString()} units over storage capacity. Overflow storage costs money and slows packing.`, s.day % 28 === 0);
   }
   if (s.loan && s.loan.dueDay === s.day) {
     s.cash = round2(s.cash - s.loan.amount);
-    book(s, 'interest', s.loan.amount - s.loan.principal, { cash: false });
+    book(s, 'interest', s.loan.amount - s.loan.principal, { cash: false, sub: 'Loans' });
     notify(s, 'cash', `Repaid the ${s.loan.label}: −$${s.loan.amount.toLocaleString()}.`);
     s.loan = null;
   }
@@ -259,6 +261,8 @@ function billsAndPayouts(s: GameState): void {
 interface Demand {
   channel: ChannelId;
   source: OrderSource;
+  campaignId?: number;
+  only?: string;
   orders: number;
   repeat?: boolean;
   discount?: number;
@@ -295,7 +299,7 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
       const impressions = Math.round((spent / f.cpm) * 1000);
       const clicks = poisson(s, impressions * f.ctr);
       const orders = hasStock ? poisson(s, clicks * f.cvr) : 0;
-      book(s, 'ads', spent, { brandId: brand.id, productId: pid, channel: 'store' });
+      book(s, 'ads', spent, { brandId: brand.id, productId: pid, channel: 'store', sub: 'Scrollr social ads' });
       adStat(s, pid, 'scrollr', { spend: spent, impressions, clicks });
       rec.visits += clicks;
       rec.impressions += impressions;
@@ -317,7 +321,7 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
       const clicks = Math.min(poisson(s, p.search.budget / f.cpc), Math.round(f.maxClicks));
       const spent = round2(clicks * f.cpc);
       const orders = hasStock ? poisson(s, clicks * f.cvr) : 0;
-      book(s, 'ads', spent, { brandId: brand.id, productId: pid, channel: 'store' });
+      book(s, 'ads', spent, { brandId: brand.id, productId: pid, channel: 'store', sub: 'Seekly search ads' });
       adStat(s, pid, 'seekly', { spend: spent, impressions: Math.round(clicks / 0.045), clicks });
       rec.visits += clicks;
       p.search.history.push({ day: s.day, spend: spent, clicks, orders });
@@ -358,10 +362,11 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
     const visits = c.traffic * d.bars.demand * trend * Math.pow(l.rank, 1.4) * intl * copycatMult(s, pid) * (promo ? 2 : 1) * (bbd ? 2.5 : 1);
     let sponsoredClicks = 0;
     if (l.sponsored > 0 && hasStock) {
-      const cpc = (0.5 + 0.18 * d.bars.competition) * cpmSeason(s.day);
-      sponsoredClicks = Math.round(l.sponsored / cpc);
+      const cpc = (0.5 + 0.18 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost');
+      // Sponsored slots only get so many shoppers: about a quarter of the product's search traffic there.
+      sponsoredClicks = Math.round(Math.min(l.sponsored / cpc, c.traffic * d.bars.demand * 0.25 * trend * intl));
       const spent = round2(sponsoredClicks * cpc);
-      book(s, 'ads', spent, { brandId: brand.id, productId: pid, channel: ch });
+      book(s, 'ads', spent, { brandId: brand.id, productId: pid, channel: ch, sub: `Sponsored · ${CHANNELS[ch].name}` });
       adStat(s, pid, 'sponsored', { spend: spent, impressions: sponsoredClicks * 30, clicks: sponsoredClicks });
     }
     rec.visits += Math.round(visits + sponsoredClicks);
@@ -370,6 +375,10 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
     const cvr = d.baseCVR * c.cvrMult * priceFactor(s, pid, ch === 'flashcart' ? 2 : 1.4, price, ch) * reviewFactor(s, pid) * (l.program && c.program ? c.program.cvrBonus : 1) * premium * (d.exclusive ? 1.1 : 1);
     const organicOrders = hasStock ? poisson(s, visits * cvr) : 0;
     const sponsoredOrders = hasStock ? poisson(s, sponsoredClicks * cvr) : 0;
+    if (l.sponsored > 0) {
+      (l.adHistory ??= []).push({ day: s.day, spend: round2(sponsoredClicks * (0.5 + 0.18 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost')), orders: sponsoredOrders });
+      if (l.adHistory.length > 14) l.adHistory.shift();
+    }
     const orders = organicOrders + sponsoredOrders;
     l.recent.push(orders);
     if (l.recent.length > 7) l.recent.shift();
@@ -401,27 +410,38 @@ function brandRepeatDemand(s: GameState): Map<string, Demand[]> {
       (flows.postPurchase ? 1.35 : 1) *
       (flows.winback ? 1.15 : 1) *
       (brand.packaging === 'branded' ? 1.15 : 1) *
-      (brand.thankYouCard ? 1.05 : 1);
+      (brand.thankYouCard ? 1.05 : 1) *
+      (1 + 0.12 * (brand.packScore ?? 0));
     let repeat = poisson(s, brand.customers * rate);
     if (!s.flags.priya && s.shipped >= 15 && (rating >= 3.8 || s.shipped < 40)) {
       s.flags.priya = true;
       repeat = Math.max(1, repeat);
     }
-    const campaign = brand.email.pending.shift() ?? 0;
-    const campaignOrders = poisson(s, campaign);
-    const discount = s.counters[`campaignDiscount-${brand.id}`] ?? 0;
     const allocate = (n: number, extra: Partial<Demand>) => {
       for (let k = 0; k < n; k++) {
-        let r = rand(s) * total;
         let i = 0;
-        while (r > weights[i] && i < weights.length - 1) r -= weights[i++];
+        if (extra.only && pids.includes(extra.only)) i = pids.indexOf(extra.only);
+        else {
+          let r = rand(s) * total;
+          while (r > weights[i] && i < weights.length - 1) r -= weights[i++];
+        }
         const list = out.get(pids[i]) ?? [];
         list.push({ channel: 'store', source: 'repeat', orders: 1, repeat: true, ...extra });
         out.set(pids[i], list);
       }
     };
-    allocate(Math.min(repeat, 5000), {});
-    allocate(Math.min(campaignOrders, 5000), { discount, source: 'email' });
+    // Part of repeat buying only happens because email flows nudged people: credit the flows.
+    const flowMult = (flows.postPurchase ? 1.35 : 1) * (flows.winback ? 1.15 : 1);
+    const fromFlows = binomial(s, repeat, 1 - 1 / flowMult);
+    allocate(Math.min(repeat - fromFlows, 5000), {});
+    allocate(Math.min(fromFlows, 5000), { source: 'flow' });
+    let campaignOrders = 0;
+    for (const q of brand.email.queue ?? []) {
+      const n = poisson(s, q.days.shift() ?? 0);
+      campaignOrders += n;
+      allocate(Math.min(n, 5000), { discount: q.discount, source: 'email', campaignId: q.id, only: q.productId });
+    }
+    brand.email.queue = (brand.email.queue ?? []).filter((q) => q.days.length);
     if (repeat + campaignOrders > 0) milestone(s, 'first_repeat');
   }
   return out;
@@ -472,6 +492,14 @@ function sell(s: GameState, pid: string, demand: Demand[], rec: DailyRecord): { 
     slice(s, pid, dem.channel, 'orders', orders);
     slice(s, pid, dem.channel, 'units', units);
     countSource(s, dem.source, orders);
+    (rec.sourceRevenue ??= {})[dem.source] = (rec.sourceRevenue[dem.source] ?? 0) + revenue;
+    if (dem.campaignId) {
+      const camp = s.emails.find((e) => e.id === dem.campaignId);
+      if (camp) {
+        camp.orders += orders;
+        camp.revenue += revenue;
+      }
+    }
     if (dem.source === 'scrollr' || dem.source === 'seekly' || dem.source === 'creator' || dem.source === 'sponsored') adStat(s, pid, dem.source, { orders, revenue });
     s.channelAccrued[dem.channel] = round2((s.channelAccrued[dem.channel] ?? 0) + revenue - fees);
     rec.channelRevenue[dem.channel] = (rec.channelRevenue[dem.channel] ?? 0) + revenue;

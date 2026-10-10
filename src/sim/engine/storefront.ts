@@ -1,6 +1,6 @@
-import { MODULES, STORE_SUBSCRIPTION } from '../data';
+import { MODULES, packScore, STORE_SUBSCRIPTION } from '../data';
 import { def, round2 } from '../economics';
-import type { Brand, GameState, ModuleId, Packaging, PhotoChoice } from '../types';
+import type { Brand, GameState, ModuleId, PackDesign, Packaging, PhotoChoice, Vibe } from '../types';
 import { HOURS } from '../data';
 import { type ActionResult, milestone, nextId, spendOn, useHours } from './core';
 
@@ -17,7 +17,7 @@ export function setModule(s: GameState, brandId: number, id: ModuleId, tier: num
   if (tier > current) {
     let cost = 0;
     for (let t = current + 1; t <= tier; t++) if (!s.flags[`bought-${b.id}-${id}-${t}`]) cost += d.tiers[t - 1].cost;
-    const err = spendOn(s, 'other', cost, b.id);
+    const err = spendOn(s, 'other', cost, b.id, 'Store upgrades');
     if (err) return err;
     for (let t = current + 1; t <= tier; t++) s.flags[`bought-${b.id}-${id}-${t}`] = true;
   }
@@ -90,7 +90,7 @@ export function takePhoto(s: GameState, pid: string, choice: PhotoChoice): Actio
 /** Pay a pro photographer instead of spending founder hours (always 5★). */
 export function hirePhotographer(s: GameState, pid: string): ActionResult {
   if (s.stage < 2) return 'Pro photographers book bigger clients. Grow first.';
-  const err = spendOn(s, 'other', 400, s.products[pid].brandId);
+  const err = spendOn(s, 'other', 400, s.products[pid].brandId, 'Photography');
   if (err) return err;
   const p = s.products[pid];
   p.photoStars = 5;
@@ -115,7 +115,7 @@ export function launchStore(s: GameState, brandId: number): ActionResult {
   if (b.store.launched) return null;
   const problems = launchProblems(s, brandId);
   if (problems.length) return problems[0];
-  const err = spendOn(s, 'rent', STORE_SUBSCRIPTION, b.id);
+  const err = spendOn(s, 'rent', STORE_SUBSCRIPTION, b.id, 'ShopBloc plan');
   if (err) return err;
   b.store.launched = true;
   b.store.launchedDay = s.day;
@@ -135,6 +135,22 @@ export function setOffer(s: GameState, pid: string, patch: Partial<{ price: numb
   const p = s.products[pid];
   Object.assign(p, patch);
   p.price = Math.max(3, Math.min(499, round2(p.price)));
+}
+
+export function setPackDesign(s: GameState, brandId: number, design: PackDesign): ActionResult {
+  const b = brand(s, brandId);
+  const pids = Object.keys(s.products).filter((id) => s.products[id].brandId === b.id);
+  const cat = pids.length ? def(s, pids[0]).category : 'pets';
+  b.packDesign = design;
+  b.packScore = packScore(design, cat);
+  return null;
+}
+
+export function setStoreLayout(s: GameState, brandId: number, order: ModuleId[], theme?: Vibe): ActionResult {
+  const b = brand(s, brandId);
+  b.store.order = order;
+  if (theme) b.theme = theme;
+  return null;
 }
 
 export function setBrandOps(s: GameState, brandId: number, patch: Partial<{ packaging: Packaging; thankYouCard: boolean; freeShipping: boolean }>): ActionResult {

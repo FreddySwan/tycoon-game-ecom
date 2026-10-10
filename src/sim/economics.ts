@@ -1,6 +1,9 @@
-import { cpmSeason, demandSeason, dayOfYear } from './calendar';
+import { cpmSeason, demandSeason, dayOfYear, periodOf, type PeriodKind } from './calendar';
 import {
   BENEFITS,
+  CATEGORY_VIBE,
+  INSERT_COST,
+  layoutScore,
   CTA_FIT,
   HOOK_FIT,
   hooksFor,
@@ -35,6 +38,7 @@ import type {
   GameState,
   AdDay,
   AdSource,
+  ModKey,
   PLCategory,
   ProductDef,
   Slice,
@@ -67,6 +71,13 @@ export function audiences(s: GameState, pid: string): [AudienceDef, AudienceDef]
   return CATEGORIES[def(s, pid).category].audiences;
 }
 
+/** Product of all active modifiers for a key (optionally also those scoped to e.g. a supplier). */
+export function mod(s: GameState, key: ModKey, scope?: string): number {
+  let m = 1;
+  for (const x of s.modifiers ?? []) if (x.key === key && x.until >= s.day && (!x.scope || x.scope === scope)) m *= x.mult;
+  return m;
+}
+
 // ───────────────────────────── sourcing ─────────────────────────────
 
 export function activeContract(s: GameState, supplierId: SupplierId) {
@@ -76,13 +87,13 @@ export function activeContract(s: GameState, supplierId: SupplierId) {
 export function listPrice(s: GameState, pid: string, supplierId: SupplierId, qty: number): number {
   const tier = qty >= 10000 ? 0.8 : qty >= 3000 ? 0.83 : qty >= 1000 ? 0.855 : qty >= 500 ? 0.945 : 1;
   const contract = activeContract(s, supplierId);
-  const priceUp = 1 + (s.counters[`priceUp-${supplierId}`] ?? 0);
+  const priceUp = (1 + (s.counters[`priceUp-${supplierId}`] ?? 0)) * mod(s, 'unitCost', supplierId);
   return round2(def(s, pid).baseUnitCost * SUPPLIERS[supplierId].priceMult * tier * priceUp * (contract ? 1 - contract.discount : 1));
 }
 
 export function freightPerUnit(s: GameState, pid: string, freight: 'air' | 'sea'): number {
   const d = def(s, pid);
-  return freight === 'air' ? d.airFreight : d.seaFreight;
+  return round2(freight === 'air' ? d.airFreight * mod(s, 'airFreight') : d.seaFreight * mod(s, 'seaFreight'));
 }
 
 export function landedUnitCost(s: GameState, pid: string): number {
@@ -151,9 +162,9 @@ export function orderBreakdown(s: GameState, pid: string, bundle: boolean, ch: C
   const c = CHANNELS[ch];
   const program = !own && !!s.products[pid].listings[ch]?.program && !!c.program;
   const fees = charged * channelFee(s, ch) + c.feeFlat + (program ? c.program!.feePerUnit * units : 0);
-  const shipping = program ? 0 : d.shipToCustomer * (bundle ? 1.25 : 1);
+  const shipping = program ? 0 : d.shipToCustomer * (bundle ? 1.25 : 1) * mod(s, 'shipping');
   const thirdParty = program || !s.thirdParty ? 0 : THIRD_PARTY.perOrder;
-  const packaging = program ? 0 : PACKAGING_COST[brand.packaging] + (brand.thankYouCard ? THANK_YOU_COST : 0);
+  const packaging = program ? 0 : PACKAGING_COST[brand.packaging] * mod(s, 'packaging') + (brand.thankYouCard ? THANK_YOU_COST : 0) + (brand.packDesign ? INSERT_COST[brand.packDesign.insert] : 0);
   const cogs = landedUnitCost(s, pid) * units;
   return {
     charged: round2(charged),
@@ -239,6 +250,11 @@ export function trustBreakdown(s: GameState, pid: string): { total: number; part
   if (m.shipping) add('Shipping info', m.shipping === 2 ? 0.09 : 0.07);
   if (m.checkout) add('Checkout', m.checkout === 2 ? 0.1 : 0.05);
   if (brand.packaging === 'branded') add('Branded unboxing', 0.03);
+  if (brand.packScore) add('Packaging design', 0.03 * brand.packScore);
+  const pos = s.positioning?.[pid];
+  if (pos && p.benefits.includes(pos)) add('Answers the #1 complaint', 0.05);
+  if (brand.store.order?.length) add('Page flow', 0.06 * layoutScore(brand.store.order.filter((x) => m[x] > 0)) - 0.02);
+  if (brand.theme) add('Theme fit', brand.theme === CATEGORY_VIBE[d.category] ? 0.03 : -0.01);
 
   const count = MODULES.filter((x) => m[x.id] > 0).length;
   const heavy = (m.hero === 2 ? 1 : 0) + (m.gallery === 2 ? 1 : 0);
@@ -301,7 +317,7 @@ export function siteCVR(s: GameState, pid: string, aud: AudienceDef | null, cvrB
   const elasticity = aud ? aud.elasticity : 1.35;
   const fit = aud ? aud.cvrFit : 0.95;
   const exclusive = d.exclusive ? 1.1 : 1;
-  return d.baseCVR * trust(s, pid) * priceFactor(s, pid, elasticity) * reviewFactor(s, pid) * fit * cvrBoost * exclusive * copycatMult(s, pid);
+  return d.baseCVR * trust(s, pid) * priceFactor(s, pid, elasticity) * reviewFactor(s, pid) * fit * cvrBoost * exclusive * copycatMult(s, pid) * mod(s, 'cvr');
 }
 
 export interface CellForecast {
@@ -320,13 +336,13 @@ export function cellForecast(s: GameState, pid: string, cell: AdCell): CellForec
   const cre = CREATIVES[cell.creative];
   const reach = 1 + intlFactor(s);
   const competition = 0.55 + d.bars.competition * 0.15;
-  const cpm = aud.cpm * competition * cpmSeason(s.day) * (1 + Math.pow(cell.budget / (aud.scale * reach), 1.15) * 0.6);
+  const cpm = aud.cpm * competition * cpmSeason(s.day) * (1 + Math.pow(cell.budget / (aud.scale * reach), 1.15) * 0.6) * mod(s, 'adCost');
   const fatigue = Math.max(0.6, 1 - 0.012 * Math.max(0, cell.daysActive - 5));
   const marketer = s.team.marketer.count > 0 ? 1.1 : 1;
   const doy = dayOfYear(s.day);
   const resolution = cell.audienceId === 'fresh' && doy >= 300 && doy <= 345 ? 1.4 : 1;
   const cm = creativeMult(s, pid, cell.creative, idx);
-  const ctr = cre.ctr * cre.fit[idx] * fatigue * marketer * Math.min(1.8, trendMult(s, pid)) * resolution * cm.ctr;
+  const ctr = cre.ctr * cre.fit[idx] * fatigue * marketer * Math.min(1.8, trendMult(s, pid)) * resolution * cm.ctr * mod(s, 'adCtr', pid);
   const cpc = cpm / (1000 * ctr);
   const cvr = siteCVR(s, pid, aud, cre.cvrBoost) * cm.cvr;
   return { cpm, ctr, cpc, cvr, cpa: cpc / cvr };
@@ -368,7 +384,7 @@ export function recentCPA(cell: { history: { spend: number; orders: number }[] }
 
 export function searchForecast(s: GameState, pid: string) {
   const d = def(s, pid);
-  const cpc = (0.6 + 0.25 * d.bars.competition) * cpmSeason(s.day);
+  const cpc = (0.6 + 0.25 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost');
   const maxClicks = d.searchVolume * trendMult(s, pid) * (1 + intlFactor(s)) * copycatMult(s, pid);
   const cvr = siteCVR(s, pid, null) * 1.6;
   return { cpc, maxClicks, cvr, cpa: cpc / cvr };
@@ -510,6 +526,12 @@ export function headcount(s: GameState): number {
 
 export function seatsUsed(s: GameState, seat: 'floor' | 'office'): number {
   return ROLE_ORDER.filter((r) => ROLES[r].seat === seat).reduce((a, r) => a + s.team[r].count, 0);
+}
+
+export function payrollByRole(s: GameState): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of ROLE_ORDER) out[r] = s.team[r].count * ROLES[r].wage * BENEFITS * s.team[r].wageMult * (r === 'packer' && s.shifts === 2 ? 1.08 : 1);
+  return out;
 }
 
 export function payrollMonthly(s: GameState): number {
@@ -710,4 +732,34 @@ export function orderPace(s: GameState, days: number): { total: number; own: num
   const total = recent.reduce((a, r) => a + r.orders, 0) / recent.length;
   const own = recent.reduce((a, r) => a + (r.ownOrders ?? r.orders), 0) / recent.length;
   return { total, own };
+}
+
+export interface PeriodPL {
+  label: string;
+  days: number;
+  partial: boolean;
+  pl: Record<PLCategory, number>;
+  sub: Partial<Record<PLCategory, Record<string, number>>>;
+}
+
+/** P&L grouped by calendar month, quarter or year (newest last), with one level of detail per line. */
+export function periodPL(s: GameState, kind: PeriodKind, count: number): PeriodPL[] {
+  const groups = new Map<number, PeriodPL>();
+  const size = kind === 'month' ? 30 : kind === 'quarter' ? 90 : 360;
+  for (const r of s.history) {
+    const { key, label } = periodOf(r.day, kind);
+    let g = groups.get(key);
+    if (!g) {
+      g = { label, days: 0, partial: false, pl: emptyPL(), sub: {} };
+      groups.set(key, g);
+    }
+    g.days++;
+    for (const k of Object.keys(g.pl) as PLCategory[]) g.pl[k] += r.pl[k];
+    for (const [cat, lines] of Object.entries(r.plSub ?? {})) {
+      const into = (g.sub[cat as PLCategory] ??= {});
+      for (const [name, v] of Object.entries(lines ?? {})) into[name] = (into[name] ?? 0) + v;
+    }
+  }
+  const out = [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([, g]) => ({ ...g, partial: g.days < size }));
+  return out.slice(-count);
 }

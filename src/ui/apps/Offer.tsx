@@ -6,6 +6,7 @@ import { useGame } from '../../state/store';
 import { AppTitle, Options, Toggle } from '../bits';
 import { money, pct } from '../format';
 import { ProductPicker, useProduct } from '../ProductPicker';
+import { PackagingDesigner } from '../Startup';
 
 export function OfferApp() {
   const game = useGame((s) => s.game);
@@ -65,6 +66,7 @@ export function OfferApp() {
           <p className="tiny muted">
             Damage in transit: basic {pct(DAMAGE_RATE.basic, 0)}, sturdy {pct(DAMAGE_RATE.sturdy, 1)}, branded {pct(DAMAGE_RATE.branded, 1)}. Branded unboxing also lifts trust, reviews and repeat buying.
           </p>
+          <PackagingDesigner brand={brand} />
         </div>
         <div>
           <b>One order, where the money goes</b>

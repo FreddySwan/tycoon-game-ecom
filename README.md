@@ -42,6 +42,19 @@ liquidation) before the business closes.
 - *Analytics:* profit by product and by channel (incl. 3PL fees), ad performance by source and product,
   order pace by product and channel, a stock & restock table with days of cover, net-30 supplier terms.
 
+**Round 3 additions:**
+- *Startup mini-games:* market scan (find the opening, the real complaint and the price gap; the complaint unlocks a
+  positioning benefit), ad-angle test (match hooks to audiences for a click boost), packaging designer, store page
+  layout & theme. A graded launch checklist tracks them in stage 1.
+- *Inbox offers:* bank credit, invoice financing, supplier volume deals (with commitments), premium materials,
+  ad agencies, Scrollr partner program, freight and carrier deals, packaging and conversion tools, influencer
+  bundles, and buy-outs of a product line. Accepted deals show under "Active deals".
+- *Standard replies:* after the first profitable reorder, set a default reply per issue type or outsource the inbox.
+- *Email:* promotion, replenishment, product launch, review request and brand story campaigns, sent to segments
+  (everyone, recent buyers, lapsed, VIP), with per-campaign opens, clicks, orders, revenue and reviews, plus flow revenue.
+- *P&L:* monthly / quarterly / yearly, every line expandable (products, channels, ad sources, teams, items).
+- *Ad manager* now also runs marketplace sponsored listings and lightning deals.
+
 **Money model:** a daily P&L (revenue, refunds, product cost, shipping, fees, ads, payroll, rent, other, interest)
 with monthly reports, separate from cash. Payouts arrive per channel on their own schedules, suppliers can offer
 30/70 terms, wholesale pays net-30. The Cash River shows where money is locked up.
@@ -53,8 +66,7 @@ with monthly reports, separate from cash. Payouts arrive per channel on their ow
   from the player's warehouse layout, staff counts and stock levels).
 - **Zustand** store around a **pure TypeScript simulation** tested with **Vitest**.
 - Art: [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit) (CC0) plus shapes drawn in code.
-- Product photos: Creative Commons photos found via [Openverse](https://openverse.org) (CC0 / CC BY / public domain),
-  in `public/assets/products/` with attribution in `src/ui/photo-credits.json` (shown on the Wall screen).
+- Product photos in `public/assets/products/` (slot 0 supplied by the developer; others via Openverse, CC0 / CC BY).
 
 ## Layout
 

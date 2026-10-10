@@ -1,7 +1,8 @@
 import { dateLabel } from '../../sim/calendar';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { CHANNELS } from '../../sim/data';
-import { cashPools, channelTrailing, def, payrollMonthly, productTrailing, profitOf, runwayProjection, trailing } from '../../sim/economics';
+import { cashPools, channelTrailing, def, payrollMonthly, periodPL, productTrailing, profitOf, runwayProjection } from '../../sim/economics';
+import type { PeriodKind } from '../../sim/calendar';
 import type { ChannelId } from '../../sim/types';
 import { Options } from '../bits';
 import { ProductImage } from '../photos';
@@ -55,8 +56,6 @@ export function Finance() {
   const proj = runwayProjection(game);
   const low = Math.min(...proj);
   const lowDay = game.day + 1 + proj.indexOf(low);
-  const rolling = trailing(game, 30);
-  const reports = game.reports.slice(-4);
   const credit = game.credit;
   const [days, setDays] = useState(30);
   const byProduct = productTrailing(game, days);
@@ -147,46 +146,7 @@ export function Finance() {
         </p>
       )}
 
-      <h3>Profit & loss</h3>
-      <table className="data">
-        <thead>
-          <tr>
-            <th />
-            {reports.map((r) => (
-              <th key={r.month} className="num">
-                Month {r.month}
-              </th>
-            ))}
-            <th className="num">Last 30 days</th>
-          </tr>
-        </thead>
-        <tbody>
-          {ROWS.map((row) => (
-            <tr key={row.k}>
-              <td>{row.label}</td>
-              {reports.map((r) => (
-                <td key={r.month} className="num">
-                  {row.k === 'revenue' ? money(r.pl[row.k]) : r.pl[row.k] ? `−${money(r.pl[row.k]).replace('$', '$')}` : '—'}
-                </td>
-              ))}
-              <td className="num">{row.k === 'revenue' ? money(rolling.pl[row.k]) : rolling.pl[row.k] ? `−${money(rolling.pl[row.k])}` : '—'}</td>
-            </tr>
-          ))}
-          <tr>
-            <td>
-              <b>Profit</b>
-            </td>
-            {reports.map((r) => (
-              <td key={r.month} className={`num ${r.profit >= 0 ? 'good-text' : 'bad-text'}`}>
-                <b>{money(r.profit)}</b>
-              </td>
-            ))}
-            <td className={`num ${profitOf(rolling.pl) >= 0 ? 'good-text' : 'bad-text'}`}>
-              <b>{money(profitOf(rolling.pl))}</b>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <PLTable />
       <p className="tiny muted">Profit counts product cost when an item sells, not when you pay the factory. That’s why profit and cash rarely match.</p>
 
       <div className="row between" style={{ marginTop: 18 }}>
@@ -222,5 +182,93 @@ export function Finance() {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Profit & loss by month, quarter or year. Click a line to see what it’s made of. */
+function PLTable() {
+  const game = useGame((s) => s.game);
+  const [kind, setKind] = useState<PeriodKind>('month');
+  const [open, setOpen] = useState<Set<PLCategory>>(new Set());
+  const periods = periodPL(game, kind, kind === 'year' ? 3 : 4);
+  const toggle = (k: PLCategory) => {
+    const next = new Set(open);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    setOpen(next);
+  };
+  const cell = (k: PLCategory, v: number) => (k === 'revenue' ? money(v) : v ? `−${money(v)}` : '—');
+  return (
+    <>
+      <div className="row between" style={{ marginTop: 18 }}>
+        <h3 style={{ margin: 0 }}>Profit & loss</h3>
+        <Options value={kind} options={[{ v: 'month', label: 'Monthly' }, { v: 'quarter', label: 'Quarterly' }, { v: 'year', label: 'Yearly' }]} onChange={setKind} />
+      </div>
+      <p className="tiny muted">Click a line to break it down (by product, channel, ad source, team or item).</p>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="data pl">
+          <thead>
+            <tr>
+              <th />
+              {periods.map((p) => (
+                <th key={p.label} className="num">
+                  {p.label}
+                  {p.partial && <div className="tiny muted" style={{ textTransform: 'none' }}>so far</div>}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ROWS.map((row) => {
+              const subs = new Map<string, number>();
+              for (const p of periods) for (const [name, v] of Object.entries(p.sub[row.k] ?? {})) subs.set(name, (subs.get(name) ?? 0) + Math.abs(v));
+              const names = [...subs.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+              const isOpen = open.has(row.k);
+              const any = periods.some((p) => p.pl[row.k]);
+              if (!any) return null;
+              return (
+                <Fragment key={row.k}>
+                  <tr className="pl-row" onClick={() => toggle(row.k)} style={{ cursor: 'pointer' }}>
+                    <td>
+                      <span className="caret">{isOpen ? '▾' : '▸'}</span> {row.label}
+                    </td>
+                    {periods.map((p) => (
+                      <td key={p.label} className="num">
+                        {cell(row.k, p.pl[row.k])}
+                      </td>
+                    ))}
+                  </tr>
+                  {isOpen &&
+                    names.map((name) => (
+                      <tr key={name} className="pl-sub">
+                        <td>{name}</td>
+                        {periods.map((p) => (
+                          <td key={p.label} className="num">
+                            {cell(row.k, p.sub[row.k]?.[name] ?? 0)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                </Fragment>
+              );
+            })}
+            <tr>
+              <td>
+                <b>Profit</b>
+              </td>
+              {periods.map((p) => {
+                const v = profitOf(p.pl);
+                return (
+                  <td key={p.label} className={`num ${v >= 0 ? 'good-text' : 'bad-text'}`}>
+                    <b>{money(v)}</b>
+                    <div className="tiny muted">{p.pl.revenue ? `${Math.round((v / p.pl.revenue) * 100)}% margin` : ''}</div>
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

@@ -55,7 +55,7 @@ function resolveAll(s: GameState) {
       bbd: 'join',
       reserve: 'ok',
     };
-    const want = pick[ev.kind] ?? ev.choices[0].id;
+    const want = pick[ev.kind] ?? (ev.kind.startsWith('offer-') ? 'decline' : ev.choices[0].id);
     const choice = ev.choices.find((x) => x.id === want) ?? (ev.kind === 'cash-crisis' ? ev.choices[0] : ev.choices[ev.choices.length - 1]);
     if (E.resolveEvent(s, ev.id, choice.id)) E.resolveEvent(s, ev.id, ev.choices[ev.choices.length - 1].id);
   }
@@ -226,7 +226,7 @@ function growth(s: GameState) {
     const b = s.brands[0];
     if (b.packaging !== 'branded') E.setBrandOps(s, b.id, { packaging: 'branded', thankYouCard: true });
     for (const f of ['postPurchase', 'welcome', 'winback'] as const) if (!b.email.flows[f] && s.cash > 1000) E.setFlow(s, b.id, f, true);
-    if (s.day - b.email.lastCampaign >= 14) E.sendCampaign(s, b.id, 10);
+    if (s.day - b.email.lastCampaign >= 14) E.sendCampaign(s, b.id, { type: s.day % 28 < 14 ? 'promo' : 'replenish', segment: s.day % 28 < 14 ? 'vip' : 'lapsed', discount: 10 });
     if (!s.channels.loopshop?.joined) E.joinChannel(s, 'loopshop');
     for (const pid of liveProducts(s)) {
       if (s.channels.loopshop?.joined && !s.products[pid].listings.loopshop?.active) E.setListing(s, pid, 'loopshop', { active: true });

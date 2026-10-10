@@ -21,6 +21,7 @@ export type TabId =
 export type Modal =
   | { kind: 'unbox'; productId: string; supplierId: string }
   | { kind: 'photo'; productId: string }
+  | { kind: 'scan'; productId: string }
   | { kind: 'pack' }
   | { kind: 'milestone'; text: string }
   | { kind: 'report' }

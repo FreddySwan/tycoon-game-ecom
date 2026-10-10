@@ -1,5 +1,5 @@
 import { BRAND_SETUP_COST, CATALOG, LOAN, REGIONS, SPACES, STAGES, STAGE_SPACE } from '../data';
-import { def, round2, trailing } from '../economics';
+import { def, mod, round2, trailing } from '../economics';
 import { ambitionDone, stageReady } from '../progress';
 import type { AmbitionId, GameState, ProductDef, RegionId, StageId } from '../types';
 import { type ActionResult, book, milestone, newBrand, nextId, notify, spendCash, spendOn } from './core';
@@ -73,7 +73,7 @@ export function checkAmbitions(s: GameState): void {
 export function enterRegion(s: GameState, id: RegionId): ActionResult {
   if (s.stage < 5) return 'International expansion unlocks at the Established stage.';
   if (s.regions[id]?.entered) return null;
-  const err = spendOn(s, 'other', REGIONS[id].setupCost);
+  const err = spendOn(s, 'other', REGIONS[id].setupCost, undefined, 'Market entry');
   if (err) return err;
   s.regions[id] = { entered: true, warehouse: false, day: s.day };
   notify(s, 'info', `${REGIONS[id].flag} You now sell in ${REGIONS[id].name}. Shipping from home is slow; a local warehouse converts much better.`);
@@ -85,7 +85,7 @@ export function openRegionalWarehouse(s: GameState, id: RegionId): ActionResult 
   if (!r?.entered) return 'Enter the market first.';
   if (r.warehouse) return null;
   const reg = REGIONS[id];
-  const err = spendOn(s, 'rent', reg.warehouseRent);
+  const err = spendOn(s, 'rent', reg.warehouseRent, undefined, `${reg.name} warehouse`);
   if (err) return err;
   r.warehouse = true;
   s.bills.push({ id: nextId(s), dueDay: s.day + 30, label: `${reg.name} warehouse`, amount: reg.warehouseRent, everyDays: 30, category: 'rent' });
@@ -97,7 +97,7 @@ export function openRegionalWarehouse(s: GameState, id: RegionId): ActionResult 
 export function createBrand(s: GameState, name: string): ActionResult {
   if (s.stage < 5) return 'Multiple brands unlock at the Established stage.';
   if (!name.trim()) return 'Name the brand.';
-  const err = spendOn(s, 'other', BRAND_SETUP_COST);
+  const err = spendOn(s, 'other', BRAND_SETUP_COST, undefined, 'Brand launches');
   if (err) return err;
   const id = Math.max(...s.brands.map((b) => b.id)) + 1;
   const b = newBrand(id, name.trim().slice(0, 28), s.day);
@@ -140,7 +140,7 @@ export function startLab(s: GameState, baseId: string, levels: { materials: numb
   if (s.lab.some((l) => !l.done)) return 'One project at a time.';
   if (!name.trim()) return 'Name your product.';
   const cost = labCost(levels);
-  const err = spendOn(s, 'other', cost);
+  const err = spendOn(s, 'other', cost, undefined, 'Product Lab');
   if (err) return err;
   const days = labDays(s, levels);
   s.lab.push({ id: nextId(s), baseId, name: name.trim().slice(0, 32), levels, startDay: s.day, doneDay: s.day + days, cost, done: false });
@@ -190,7 +190,7 @@ export function runLab(s: GameState): void {
 
 export function updateCredit(s: GameState): void {
   if (!s.credit.unlocked) return;
-  s.credit.limit = Math.round(Math.max(5000, trailing(s, 30).revenue * 1.0) / 1000) * 1000;
+  s.credit.limit = Math.round((Math.max(5000, trailing(s, 30).revenue * 1.0) * mod(s, 'creditLimit')) / 1000) * 1000;
 }
 
 export function drawCredit(s: GameState, amount: number): ActionResult {
@@ -213,8 +213,8 @@ export function repayCredit(s: GameState, amount: number): ActionResult {
 
 export function chargeInterest(s: GameState): void {
   if (s.credit.balance > 0 && s.day % 30 === 0) {
-    const i = round2(s.credit.balance * 0.015);
-    book(s, 'interest', i);
+    const i = round2(s.credit.balance * 0.015 * mod(s, 'creditRate'));
+    book(s, 'interest', i, { sub: 'Credit line' });
     notify(s, 'cash', `Credit line interest: −$${i.toLocaleString()}.`);
   }
 }
@@ -279,7 +279,7 @@ export function resolveCashCrisis(s: GameState, choiceId: string): void {
       p.inventory.costTotal = round2(p.inventory.costTotal - avg * units);
       p.inventory.qualityTotal -= q * units;
       raised += avg * units * 0.4;
-      book(s, 'cogs', avg * units * 0.6, { cash: false });
+      book(s, 'cogs', avg * units * 0.6, { cash: false, sub: 'Liquidation losses' });
     }
     s.cash = round2(s.cash + raised);
     notify(s, 'cash', `A liquidator hauled away 30% of your stock for $${Math.round(raised).toLocaleString()}.`);
