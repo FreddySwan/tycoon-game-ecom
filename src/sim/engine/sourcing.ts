@@ -2,6 +2,7 @@ import {
   AIR_DAYS,
   MARKET_SCAN,
   CATALOG,
+  CATEGORIES,
   CREATIVE_ORDER,
   GENERIC_SAMPLE_NOTES,
   HOURS,
@@ -63,14 +64,26 @@ export function retireProduct(s: GameState, pid: string, liquidate: boolean): Ac
   return null;
 }
 
+/** Products still out there to be dug up at this stage. */
+export function digPool(s: GameState): string[] {
+  return Object.values(CATALOG)
+    .filter((d) => d.unlockStage <= s.stage && d.appearsDay <= s.day && !s.revealed.includes(d.id))
+    .map((d) => d.id);
+}
+
+export function digHours(s: GameState): number {
+  return liveProducts(s).length ? HOURS.research : HOURS.dig;
+}
+
+/** Dig through marketplaces and forums for a product idea. One random product turns up per dig. */
 export function research(s: GameState): ActionResult {
-  const hidden = Object.values(CATALOG).filter((d) => d.unlockStage <= s.stage && !s.revealed.includes(d.id));
-  if (!hidden.length) return 'Nothing new to find right now. More products unlock as you grow.';
-  const err = useHours(s, HOURS.research);
+  const hidden = digPool(s);
+  if (!hidden.length) return 'Nothing new to find right now. More products turn up as trends move and you grow.';
+  const err = useHours(s, digHours(s));
   if (err) return err;
   const found = pick(s, hidden);
-  s.revealed.push(found.id);
-  notify(s, 'info', `Research paid off: ${found.name} looks promising.`, true);
+  s.revealed.push(found);
+  notify(s, 'info', `🔎 Dug up a lead: ${def(s, found).name}.`);
   return null;
 }
 
@@ -81,6 +94,18 @@ export function researchLevel(s: GameState, pid: string): number {
 }
 
 export const RESEARCH_HOURS = { 1: 1, 2: 2 } as const;
+
+/** Finish the investigation quiz. Reading the market right (3/3) gives the founder hour back. */
+export function completeInvestigation(s: GameState, pid: string, score: number): ActionResult {
+  if (!s.revealed.includes(pid) && !s.customDefs[pid]) return 'Not discovered yet.';
+  if (researchLevel(s, pid) >= 1) return null;
+  if (score < 3) {
+    const err = useHours(s, HOURS.investigate);
+    if (err) return err;
+  }
+  s.research[pid] = 1;
+  return null;
+}
 
 export function researchProduct(s: GameState, pid: string, depth: 1 | 2): ActionResult {
   const cur = researchLevel(s, pid);
@@ -119,11 +144,11 @@ export function toggleShortlist(s: GameState, pid: string): ActionResult {
   return null;
 }
 
+/** New trends don't show up by themselves: you hear the buzz and have to dig for them. */
 export function revealDue(s: GameState): void {
   for (const d of Object.values(CATALOG)) {
-    if (s.revealed.includes(d.id) || d.unlockStage > s.stage || d.appearsDay > s.day) continue;
-    s.revealed.push(d.id);
-    notify(s, 'info', `📈 New in the Trend Scanner: ${d.name}.`, d.trend.kind === 'fad');
+    if (d.appearsDay !== s.day || d.appearsDay === 0 || s.revealed.includes(d.id) || d.unlockStage > s.stage) continue;
+    notify(s, 'info', `📈 Buzz on the forums: something new is taking off in ${CATEGORIES[d.category].name}. Dig in the Trend Scanner to find it.`, d.trend.kind === 'fad');
   }
 }
 

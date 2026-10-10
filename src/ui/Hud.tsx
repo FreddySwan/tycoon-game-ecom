@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { dateLabel } from '../sim/calendar';
+import { clockLabel, dateLabel } from '../sim/calendar';
 import { FOUNDER_HOURS, STAGES } from '../sim/data';
 import { averageRating, hoursLeft, incomingUnits } from '../sim/economics';
 import { isBlocked } from '../sim/engine';
@@ -28,7 +28,6 @@ export function Hud() {
   const maxHours = FOUNDER_HOURS + game.extraHours;
   const rating = averageRating(game);
   const blocked = isBlocked(game);
-  const clock = 8 + Math.floor(progress * 12);
   const stock = Object.values(game.products).reduce((a, p) => a + p.inventory.onHand, 0);
 
   return (
@@ -43,7 +42,7 @@ export function Hud() {
       <div className="stat">
         <span className="label">Day {game.day}</span>
         <span className="value">
-          {dateLabel(game.day)} <small>{clock}:00</small>
+          {dateLabel(game.day)} <small>{clockLabel(progress)}</small>
         </span>
       </div>
       <div className={`stat ${game.cash < 300 ? 'warn' : ''}`}>

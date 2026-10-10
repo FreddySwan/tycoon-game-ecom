@@ -283,12 +283,14 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
   // Your store: Scrollr ads
   if (live) {
     let adOrders = 0;
+    const stockPause = !hasStock && !!s.adPolicy.pauseOOS;
     for (const cell of Object.values(p.ads)) {
       if (!cell.active) continue;
       if (!creativeUnlocked(s, pid, cell.creative)) {
         cell.active = false;
         continue;
       }
+      if (stockPause) continue;
       if (s.cash < cell.budget && !s.credit.unlocked) {
         cell.active = false;
         s.flags.adsPausedCash = true;
@@ -316,7 +318,7 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
     if (adOrders) out.push({ channel: 'store', source: 'scrollr', orders: adOrders });
 
     // Seekly search ads
-    if (p.search.active) {
+    if (p.search.active && !stockPause) {
       const f = searchForecast(s, pid);
       const clicks = Math.min(poisson(s, p.search.budget / f.cpc), Math.round(f.maxClicks));
       const spent = round2(clicks * f.cpc);

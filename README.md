@@ -31,7 +31,7 @@ inquiries, creator DMs, Big Bazaarly Days. Running out of cash gives you options
 liquidation) before the business closes.
 
 **Player tools added in the feedback round:**
-- *Product research board:* quick scans (1h) and deep dives (2h) reveal demand, competition, margins, a 60-day
+- *Product research board:* investigations (1h) and deep dives (2h) reveal demand, competition, margins, a 60-day
   trend forecast and customer insights; shortlist up to 5 and compare side by side before picking.
 - *Photo shoot:* drag to frame the product, zoom, pick backdrop, light, prop and angle. Composition counts.
 - *Creative studio:* every ad format has a photo, hook and button; hooks land differently with each audience;
@@ -54,6 +54,17 @@ liquidation) before the business closes.
   (everyone, recent buyers, lapsed, VIP), with per-campaign opens, clicks, orders, revenue and reviews, plus flow revenue.
 - *P&L:* monthly / quarterly / yearly, every line expandable (products, channels, ad sources, teams, items).
 - *Ad manager* now also runs marketplace sponsored listings and lightning deals.
+
+**Round 4 additions:**
+- *Dig for products:* a new game starts with an empty research board. Each dig (1h before your first product, 3h
+  after) turns up one random lead; investigating it is a 3-question quiz (read a search-trend curve, a page of rival
+  listings, and a cost sheet). A perfect read refunds the hour. New trends announce themselves but still need digging.
+- *Founder routine:* the apartment day runs 7:00 to 1:00. The founder wakes up, has coffee, works at the desk or packs
+  orders at the table depending on what the business needs, eats lunch, cooks dinner, unwinds on the sofa and goes to
+  bed; the room darkens at night and the cat joins them.
+- *Finance charts:* revenue, expenses and profit by day, week or month with axes and hover read-outs; a 30-day cash
+  forecast that models each channel's payout day; a "Money on its way" table with each payout's date and amount.
+- *Ads:* a checkbox (on by default) stops Scrollr and Seekly spend on out-of-stock products until stock arrives.
 
 **Money model:** a daily P&L (revenue, refunds, product cost, shipping, fees, ads, payroll, rent, other, interest)
 with monthly reports, separate from cash. Payouts arrive per channel on their own schedules, suppliers can offer

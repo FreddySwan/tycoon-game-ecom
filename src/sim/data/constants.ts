@@ -18,6 +18,9 @@ export const HOURS = {
   photoShoot: 2,
   card: 0.25,
   research: 3,
+  /** Digging for your very first product is quicker: you have nothing else to do. */
+  dig: 1,
+  investigate: 1,
 } as const;
 export const FRIEND_HELP = { cost: 100, hours: 8 };
 export const WIN_REORDER_QTY = 300;

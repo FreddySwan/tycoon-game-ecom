@@ -1,4 +1,4 @@
-import { BRAND_COLORS, CATALOG, CITIES, FIRST_NAMES, FOUNDER_HOURS, LAST_INITIALS, MODULE_IDS, STARTING_CASH } from '../data';
+import { BRAND_COLORS, CITIES, FIRST_NAMES, FOUNDER_HOURS, LAST_INITIALS, MODULE_IDS, STARTING_CASH } from '../data';
 import { def, emptyPL, hoursLeft, round2 } from '../economics';
 import { pick } from '../rng';
 import { CHANNELS, hooksFor } from '../data';
@@ -143,7 +143,7 @@ export function createGame(seed = Date.now()): GameState {
     products: {},
     productOrder: [],
     customDefs: {},
-    revealed: Object.keys(CATALOG).filter((id) => CATALOG[id].unlockStage === 1 && CATALOG[id].appearsDay === 0),
+    revealed: [],
     brands: [newBrand(1, '', 1)],
     samples: [],
     relationship: { quickmake: 50, brightway: 50, atelier: 50, megafab: 45 },
@@ -185,7 +185,7 @@ export function createGame(seed = Date.now()): GameState {
     regions: {},
     wholesale: [],
     lab: [],
-    adPolicy: { maxSharePct: 20, floor: 100, marginPct: 25 },
+    adPolicy: { maxSharePct: 20, floor: 100, marginPct: 25, pauseOOS: true },
     autopilot: { staffing: false, buildout: false },
     research: {},
     positioning: {},
@@ -338,6 +338,7 @@ export function founderHours(): number {
 export function migrate(s: GameState): GameState {
   s.adPolicy ??= { maxSharePct: 20, floor: 100, marginPct: 25 };
   s.adPolicy.marginPct ??= 25;
+  s.adPolicy.pauseOOS ??= true;
   s.autopilot ??= { staffing: false, buildout: false };
   s.research ??= {};
   s.shortlist ??= [];

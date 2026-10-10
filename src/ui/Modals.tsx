@@ -4,6 +4,7 @@ import { averageRating, brandOf, def, profitOf } from '../sim/economics';
 import { compositionScore, handPack, inspectSample, MILESTONE_LABELS, MILESTONE_PICS, nextHandPack, resolveEvent, sampleNote, scorePhoto, setFlag, takePhoto } from '../sim/engine';
 import { ProductImage, ProductShot } from './photos';
 import { MarketScan } from './MarketScan';
+import { DigReveal, Investigate } from './Discovery';
 import type { MilestoneId, PhotoChoice, SupplierId } from '../sim/types';
 import { sfx } from '../state/sound';
 import { useGame } from '../state/store';
@@ -35,6 +36,10 @@ export function Modals() {
       return <Report />;
     case 'scan':
       return <MarketScan productId={modal.productId} />;
+    case 'dig':
+      return <DigReveal key={modal.productId} productId={modal.productId} />;
+    case 'quiz':
+      return <Investigate key={modal.productId} productId={modal.productId} />;
   }
 }
 
@@ -58,7 +63,7 @@ function Intro() {
         You just quit a job you didn’t love. You have a laptop, <b>{money(STARTING_CASH)}</b> in savings, a corner of a studio apartment, and a cat called Invoice.
       </p>
       <p>
-        Start by researching products across niches, shortlist the best, and pick one. First goal: launch it and make your <b>first profitable reorder</b>. After that, the road runs from your kitchen table to a garage, a warehouse, an HQ, and maybe a global company. Or a small brand people love. Your call.
+        Start by digging for product ideas, investigate each market, shortlist the best, and pick one. First goal: launch it and make your <b>first profitable reorder</b>. After that, the road runs from your kitchen table to a garage, a warehouse, an HQ, and maybe a global company. Or a small brand people love. Your call.
       </p>
       <p className="tiny muted">Rent is $900 every 30 days. Time only moves when you press ▶ or skip ahead.</p>
       <button className="primary" onClick={() => act(setFlag, 'introSeen')}>

@@ -22,6 +22,8 @@ export type Modal =
   | { kind: 'unbox'; productId: string; supplierId: string }
   | { kind: 'photo'; productId: string }
   | { kind: 'scan'; productId: string }
+  | { kind: 'dig'; productId: string }
+  | { kind: 'quiz'; productId: string }
   | { kind: 'pack' }
   | { kind: 'milestone'; text: string }
   | { kind: 'report' }

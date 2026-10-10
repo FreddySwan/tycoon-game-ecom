@@ -215,7 +215,12 @@ function growth(s: GameState) {
   const slots = E.productSlots(s);
   const t = trailing(s, 30);
   if (liveProducts(s).length < slots && s.stage >= 1 && (liveProducts(s).length === 0 || (t.profit > 1500 * liveProducts(s).length && s.cash > 2500))) {
-    const next = s.revealed.find((id) => !s.products[id] && (CATALOG[id]?.trend.kind !== 'fad' || id === 'sunsetlamp') || (s.customDefs[id] && !s.products[id]));
+    const pickNext = () => s.revealed.find((id) => !s.products[id] && (CATALOG[id]?.trend.kind !== 'fad' || id === 'sunsetlamp') || (s.customDefs[id] && !s.products[id]));
+    let next = pickNext();
+    for (let k = 0; k < 3 && !next && E.digPool(s).length; k++) {
+      if (E.research(s)) break;
+      next = pickNext();
+    }
     if (next) E.addProduct(s, next);
   }
   // Retire dead fads
@@ -277,6 +282,7 @@ export function runBot(seed: number, days = 720, log?: (line: string) => void, s
   const fresh = !start;
   const stageDays: Partial<Record<StageId, number>> = { 1: 1 };
   if (fresh) {
+    discover(s, 'dogbowl');
     E.addProduct(s, 'dogbowl');
     E.orderSample(s, 'dogbowl', 'brightway');
     E.setBrandName(s, 1, 'Pawsitive Pace');
@@ -326,8 +332,14 @@ export function runBot(seed: number, days = 720, log?: (line: string) => void, s
   return { s, result };
 }
 
+/** Dig until a specific product turns up (bots know what they want). */
+function discover(s: GameState, pid: string): void {
+  while (!s.revealed.includes(pid) && E.digPool(s).length) if (E.research(s)) s.hoursUsed = 0;
+}
+
 export function naiveBot(seed: number, days = 60): BotResult {
   const s = E.createGame(seed);
+  discover(s, 'dogbowl');
   E.addProduct(s, 'dogbowl');
   E.orderSample(s, 'dogbowl', 'brightway');
   for (let i = 0; i < 3; i++) E.advanceDay(s);

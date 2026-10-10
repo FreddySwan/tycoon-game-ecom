@@ -1,9 +1,9 @@
-import { dateLabel } from '../../sim/calendar';
+import { dateLabel, periodOf } from '../../sim/calendar';
 import { Fragment, useState } from 'react';
 import { CHANNELS } from '../../sim/data';
-import { cashPools, channelTrailing, def, payrollMonthly, periodPL, productTrailing, profitOf, runwayProjection } from '../../sim/economics';
+import { cashForecast, cashPools, channelTrailing, def, emptyPL, payrollMonthly, periodPL, productTrailing, profitOf, upcomingPayouts } from '../../sim/economics';
 import type { PeriodKind } from '../../sim/calendar';
-import type { ChannelId } from '../../sim/types';
+import type { ChannelId, DailyRecord, GameState } from '../../sim/types';
 import { Options } from '../bits';
 import { ProductImage } from '../photos';
 import { SliceTable } from '../SliceTable';
@@ -12,6 +12,7 @@ import type { PLCategory } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle } from '../bits';
 import { money } from '../format';
+import { LineChart, type Marker } from '../LineChart';
 
 const ROWS: { k: PLCategory; label: string }[] = [
   { k: 'revenue', label: 'Revenue' },
@@ -26,26 +27,89 @@ const ROWS: { k: PLCategory; label: string }[] = [
   { k: 'interest', label: 'Interest' },
 ];
 
-function Spark({ values, startDay }: { values: number[]; startDay: number }) {
-  const w = 600;
-  const h = 120;
-  const min = Math.min(0, ...values);
-  const max = Math.max(1, ...values);
-  const x = (i: number) => (i / (values.length - 1)) * (w - 20) + 10;
-  const y = (v: number) => h - 14 - ((v - min) / (max - min)) * (h - 28);
-  const path = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-  const low = Math.min(...values);
+const shortDate = (day: number) => dateLabel(day).replace(/, Y\d+$/, '');
+
+type Range = 'days' | 'weeks' | 'months';
+
+interface Bucket {
+  axis: string;
+  label: string;
+  revenue: number;
+  expenses: number;
+  profit: number;
+  cash: number;
+}
+
+/** History grouped into days (last 30), weeks (last 13) or months (last 12). */
+function buckets(history: DailyRecord[], range: Range): Bucket[] {
+  const groups: { first: number; last: number; recs: DailyRecord[]; label?: string }[] = [];
+  if (range === 'days') for (const r of history.slice(-30)) groups.push({ first: r.day, last: r.day, recs: [r] });
+  else if (range === 'weeks') {
+    const recent = history.slice(-91);
+    for (let end = recent.length; end > 0; end -= 7) {
+      const recs = recent.slice(Math.max(0, end - 7), end);
+      groups.unshift({ first: recs[0].day, last: recs[recs.length - 1].day, recs });
+    }
+  } else {
+    const byMonth = new Map<number, (typeof groups)[number]>();
+    for (const r of history) {
+      const { key, label } = periodOf(r.day, 'month');
+      const g = byMonth.get(key) ?? { first: r.day, last: r.day, recs: [], label };
+      g.last = r.day;
+      g.recs.push(r);
+      byMonth.set(key, g);
+    }
+    groups.push(...[...byMonth.values()].slice(-12));
+  }
+  return groups.map((g) => {
+    const pl = emptyPL();
+    for (const r of g.recs) for (const k of Object.keys(pl) as PLCategory[]) pl[k] += r.pl[k];
+    const profit = profitOf(pl);
+    const label = g.label ?? (g.first === g.last ? dateLabel(g.first) : `${shortDate(g.first)} – ${dateLabel(g.last)}`);
+    return { axis: g.label ?? shortDate(g.first), label, revenue: pl.revenue, expenses: pl.revenue - profit, profit, cash: g.recs[g.recs.length - 1].cash };
+  });
+}
+
+/** Revenue, expenses and profit over time. */
+function TrendChart({ game }: { game: GameState }) {
+  const [range, setRange] = useState<Range>('days');
+  const data = buckets(game.history, range);
   return (
-    <svg className="spark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
-      <line x1={0} x2={w} y1={y(0)} y2={y(0)} stroke="#d64545" strokeDasharray="4 4" strokeWidth={1} />
-      <path d={path} fill="none" stroke={low < 0 ? '#d64545' : '#1f9d55'} strokeWidth={3} strokeLinejoin="round" />
-      <text x={10} y={12} fontSize={11} fill="#6b6570">
-        {dateLabel(startDay)}
-      </text>
-      <text x={w - 10} y={12} fontSize={11} fill="#6b6570" textAnchor="end">
-        {dateLabel(startDay + values.length - 1)}
-      </text>
-    </svg>
+    <>
+      <div className="row between" style={{ marginTop: 14 }}>
+        <h3 style={{ margin: 0 }}>Revenue, expenses & profit</h3>
+        <Options
+          value={range}
+          options={[
+            { v: 'days', label: 'Daily · 30 days' },
+            { v: 'weeks', label: 'Weekly · 13 weeks' },
+            { v: 'months', label: 'Monthly · 12 months' },
+          ]}
+          onChange={setRange}
+        />
+      </div>
+      {data.length < 2 ? (
+        <p className="muted tiny">Play a few days and your sales history shows up here.</p>
+      ) : (
+        <LineChart
+          xLabels={data.map((b) => b.axis)}
+          titles={data.map((b) => b.label)}
+          series={[
+            { key: 'rev', label: 'Revenue', color: '#2f7fd8', values: data.map((b) => b.revenue) },
+            { key: 'exp', label: 'Expenses', color: '#e0803a', values: data.map((b) => b.expenses) },
+            { key: 'profit', label: 'Profit', color: '#1f9d55', values: data.map((b) => b.profit), area: true },
+          ]}
+          extra={(i) => (
+            <>
+              <div className="tiny muted" style={{ marginTop: 4 }}>
+                {data[i].revenue ? `${Math.round((data[i].profit / data[i].revenue) * 100)}% margin · ` : ''}cash after: {money(data[i].cash)}
+              </div>
+            </>
+          )}
+        />
+      )}
+      <p className="tiny muted">Expenses = everything in the P&L below: product cost, shipping & packing, fees, ads, refunds, payroll, rent, overhead and interest. Hover the chart for exact numbers.</p>
+    </>
   );
 }
 
@@ -53,9 +117,16 @@ export function Finance() {
   const game = useGame((s) => s.game);
   const act = useGame((s) => s.act);
   const pools = cashPools(game);
-  const proj = runwayProjection(game);
+  const forecast = cashForecast(game);
+  const proj = forecast.map((d) => d.cash);
   const low = Math.min(...proj);
   const lowDay = game.day + 1 + proj.indexOf(low);
+  const payouts = upcomingPayouts(game);
+  const nextIn = [...payouts.map((p) => p.day), ...game.receivables.map((r) => r.dueDay)].sort((a, b) => a - b)[0];
+  const markers: Marker[] = forecast.flatMap((d, i) => [
+    ...(d.inflows.length ? [{ index: i + 1, color: '#1f9d55' }] : []),
+    ...(!d.inflows.length && d.outflows.some((o) => o.amount >= 200) ? [{ index: i + 1, color: '#d64545' }] : []),
+  ]);
   const credit = game.credit;
   const [days, setDays] = useState(30);
   const byProduct = productTrailing(game, days);
@@ -91,7 +162,7 @@ export function Finance() {
         <div className="pool">
           ⏳ Payouts coming
           <b>{money(pools.payouts + pools.receivables)}</b>
-          {pools.receivables > 0 ? `incl. ${money(pools.receivables)} invoices` : 'from channels'}
+          {nextIn ? `next on ${shortDate(nextIn)}` : 'from channels'}
         </div>
         {pools.payables > 0 && (
           <>
@@ -106,8 +177,41 @@ export function Finance() {
       </div>
       <p className="tiny muted">Only the green pool pays for ads, payroll, rent and reorders. Money in orange pools is real, but it’s locked up in stock.</p>
 
-      <h3>Next 30 days (if nothing changes)</h3>
-      <Spark values={[Math.round(game.cash), ...proj]} startDay={game.day} />
+      <TrendChart game={game} />
+
+      <h3>Cash forecast: next 30 days (if nothing changes)</h3>
+      <LineChart
+        height={170}
+        xLabels={[`Today`, ...forecast.map((d) => shortDate(d.day))]}
+        titles={[`Today · ${dateLabel(game.day)}`, ...forecast.map((d) => dateLabel(d.day))]}
+        series={[{ key: 'cash', label: 'Bank balance', color: low < 0 ? '#d64545' : '#1f9d55', values: [Math.round(game.cash), ...proj], area: true }]}
+        markers={markers}
+        danger={0}
+        extra={(i) => {
+          const d = forecast[i - 1];
+          if (!d) return <div className="tiny muted">Where you are now</div>;
+          return (
+            <>
+              {d.inflows.map((f, k) => (
+                <div key={`i${k}`} className="tiny good-text">
+                  + {money(f.amount)} {f.label}
+                </div>
+              ))}
+              {d.outflows
+                .filter((o) => o.amount >= 50)
+                .map((o, k) => (
+                  <div key={`o${k}`} className="tiny bad-text">
+                    − {money(o.amount)} {o.label}
+                  </div>
+                ))}
+              {!d.inflows.length && !d.outflows.some((o) => o.amount >= 50) && <div className="tiny muted">Daily costs only (ads, shipping, refunds)</div>}
+            </>
+          );
+        }}
+      />
+      <p className="tiny muted">
+        <span className="good-text">●</span> payout lands · <span className="bad-text">●</span> big bill. Sales don’t hit your bank right away: each channel holds the money and pays out on a schedule.
+      </p>
       {low < 0 ? (
         <p className="callout bad">
           ⚠️ Cash is projected to hit <b>{money(low)}</b> around {dateLabel(lowDay)}. Options: pause losing ads, order smaller or by sea, run a sale on slow stock{credit.unlocked ? ', or draw on your credit line' : ''}.
@@ -117,6 +221,53 @@ export function Finance() {
           Lowest projected balance: {money(low)} around {dateLabel(lowDay)}. Payroll runs {money(payrollMonthly(game))}/month.
         </p>
       )}
+
+      <h3>⏳ Money on its way</h3>
+      {payouts.length || game.receivables.length ? (
+        <table className="data">
+          <thead>
+            <tr>
+              <th>From</th>
+              <th>Lands on</th>
+              <th className="num">Waiting now</th>
+              <th className="num">Expected</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payouts.map((p) => (
+              <tr key={p.channel}>
+                <td>
+                  {CHANNELS[p.channel].emoji} {CHANNELS[p.channel].name} <span className="tiny muted">pays every {CHANNELS[p.channel].payoutEvery} days</span>
+                </td>
+                <td>
+                  {dateLabel(p.day)} <span className="tiny muted">({p.day - game.day === 1 ? 'tomorrow' : `in ${p.day - game.day} days`})</span>
+                </td>
+                <td className="num">{money(p.held)}</td>
+                <td className="num">
+                  <b>~{money(p.estimate)}</b>
+                </td>
+              </tr>
+            ))}
+            {[...game.receivables]
+              .sort((a, b) => a.dueDay - b.dueDay)
+              .map((r, k) => (
+                <tr key={`r${k}`}>
+                  <td>🧾 {r.label}</td>
+                  <td>
+                    {dateLabel(r.dueDay)} <span className="tiny muted">(in {r.dueDay - game.day} days)</span>
+                  </td>
+                  <td className="num">{money(r.amount)}</td>
+                  <td className="num">
+                    <b>{money(r.amount)}</b>
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="tiny muted">Nothing pending. Once you make sales, each channel’s next payout shows up here.</p>
+      )}
+      <p className="tiny muted">“Expected” adds what you’ll likely sell before payout day at last week’s pace, after channel fees.</p>
 
       {credit.unlocked && (
         <>

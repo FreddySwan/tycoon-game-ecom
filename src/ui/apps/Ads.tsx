@@ -36,6 +36,10 @@ export function Ads() {
   const [days, setDays] = useState(7);
   const pid = useProduct();
   const marketer = game.people.find((p) => p.role === 'marketer');
+  const oos = liveProducts(game).filter((id) => {
+    const p = game.products[id];
+    return p.inventory.onHand <= 0 && (p.search.active || Object.values(p.ads).some((c) => c.active));
+  });
 
   return (
     <div>
@@ -60,6 +64,13 @@ export function Ads() {
           { id: 'manager', label: 'Ad manager' },
         ]}
       />
+      <label className="row tiny" style={{ gap: 6, margin: '6px 0 10px', cursor: 'pointer' }}>
+        <input type="checkbox" checked={!!game.adPolicy.pauseOOS} onChange={(e) => act(setAdPolicy, { pauseOOS: e.target.checked })} />
+        <span>
+          ⏸ Stop running ads when a product is out of stock <span className="muted">(they restart by themselves when stock arrives)</span>
+        </span>
+        {oos.length > 0 && <span className={`pill ${game.adPolicy.pauseOOS ? 'good' : 'bad'}`}>{game.adPolicy.pauseOOS ? `${oos.length} paused now` : `${oos.length} out of stock, still spending`}</span>}
+      </label>
       {view === 'overview' && overview()}
       {view === 'campaigns' && (
         <>

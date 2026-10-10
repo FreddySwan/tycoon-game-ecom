@@ -16,6 +16,8 @@ import {
   FOUNDER_HOURS,
   HOURS,
   MODULES,
+  OVERHEAD_RATE,
+  PAYROLL_EVERY,
   PACKAGING_COST,
   PACKER_RATE,
   RACK_STORAGE,
@@ -638,39 +640,113 @@ export function dailyAdBudget(s: GameState, pid?: string): number {
   }, 0);
 }
 
+/** Rough profit per order at the reference price, shipped by air from a mid-range supplier, before ads. */
+export function roughKeep(s: GameState, pid: string) {
+  const d = def(s, pid);
+  const landed = d.baseUnitCost + d.airFreight;
+  const fees = d.refPrice * 0.03 + 0.3;
+  const keep = d.refPrice - landed - d.shipToCustomer - PACKAGING_COST.basic - fees;
+  return { landed, fees, keep, margin: keep / d.refPrice };
+}
+
+/** The day a channel next pays out (payouts land on days divisible by its schedule). */
+export function nextPayoutDay(s: GameState, ch: ChannelId): number {
+  const every = CHANNELS[ch].payoutEvery;
+  return (Math.floor(s.day / every) + 1) * every;
+}
+
+export interface UpcomingPayout {
+  channel: ChannelId;
+  day: number;
+  /** Already earned and waiting. */
+  held: number;
+  /** Held plus what the last week's pace adds before the payout day. */
+  estimate: number;
+}
+
+/** Each channel's next payout: when it lands and roughly how much. */
+export function upcomingPayouts(s: GameState): UpcomingPayout[] {
+  const pace = channelTrailing(s, 7);
+  const days = Math.max(1, Math.min(7, s.history.length));
+  const out: UpcomingPayout[] = [];
+  for (const ch of Object.keys(CHANNELS) as ChannelId[]) {
+    const held = s.channelAccrued[ch] ?? 0;
+    const x = pace[ch];
+    const daily = x ? (x.revenue - x.fees) / days : 0;
+    if (held < 1 && daily < 1) continue;
+    const day = nextPayoutDay(s, ch);
+    out.push({ channel: ch, day, held, estimate: held + daily * (day - s.day) });
+  }
+  return out.sort((a, b) => a.day - b.day);
+}
+
+export interface ForecastDay {
+  day: number;
+  cash: number;
+  inflows: { label: string; amount: number }[];
+  outflows: { label: string; amount: number }[];
+}
+
 /**
- * Rough 30-day cash projection from the last week's averages: what comes in from sales and receivables,
- * minus fulfillment, ads, payroll, bills and supplier balances. Good enough to warn, not to audit.
+ * Rough cash projection from the last week's averages. Sales build up in each channel and land on its payout
+ * day; fulfillment, ads and refunds leave daily; payroll, bills, overhead and supplier balances on their dates.
+ * Good enough to warn, not to audit.
  */
-export function runwayProjection(s: GameState, days = 30): number[] {
+export function cashForecast(s: GameState, days = 30): ForecastDay[] {
   const t = trailing(s, 7);
   const n = Math.max(1, t.days);
-  const netIn = (t.pl.revenue - t.pl.refunds - t.pl.fees) / n;
+  const pace = channelTrailing(s, 7);
+  const accrual: Partial<Record<ChannelId, number>> = {};
+  for (const [ch, x] of Object.entries(pace)) if (x) accrual[ch as ChannelId] = (x.revenue - x.fees) / n;
+  const pending: Partial<Record<ChannelId, number>> = { ...s.channelAccrued };
+  const refunds = t.pl.refunds / n;
   const variable = (t.pl.fulfillment + t.pl.ads) / n;
-  const payrollDaily = payrollMonthly(s) / 30;
+  const payroll = (payrollMonthly(s) * PAYROLL_EVERY) / 30;
+  const overhead = trailing(s, 30).revenue * OVERHEAD_RATE[s.stage];
   let cash = s.cash;
-  const out: number[] = [];
+  const out: ForecastDay[] = [];
   let stockUnits = Object.values(s.products).reduce((a, p) => a + p.inventory.onHand, 0);
   const dailyUnits = Object.keys(s.products).reduce((a, id) => a + avgDailyOrders(s, id, 7) * unitsPerOrder(s, id), 0);
   for (let d = 1; d <= days; d++) {
     const day = s.day + d;
+    const inflows: ForecastDay['inflows'] = [];
+    const outflows: ForecastDay['outflows'] = [];
+    const pay = (label: string, amount: number) => {
+      if (amount <= 0) return;
+      cash -= amount;
+      outflows.push({ label, amount });
+    };
     for (const po of s.pos) {
       if (po.status === 'arrived') continue;
       if (po.arrivesDay === day) stockUnits += po.qty;
-      if (po.productionDoneDay === day && po.balanceDue && !po.net30) cash -= po.balanceDue;
-      if (po.net30 && po.arrivesDay + 30 === day) cash -= po.balanceDue;
+      const sup = SUPPLIERS[po.supplierId]?.company ?? 'Supplier';
+      if (po.productionDoneDay === day && po.balanceDue && !po.net30) pay(`${sup} balance`, po.balanceDue);
+      if (po.net30 && po.arrivesDay + 30 === day) pay(`${sup} invoice (net 30)`, po.balanceDue);
     }
     const selling = stockUnits > 0;
     stockUnits = Math.max(0, stockUnits - dailyUnits);
-    cash += (selling ? netIn : 0) - variable * (selling ? 1 : 0.6) - payrollDaily;
+    if (selling) for (const [ch, v] of Object.entries(accrual)) pending[ch as ChannelId] = (pending[ch as ChannelId] ?? 0) + (v ?? 0);
+    cash -= (selling ? refunds : 0) + variable * (selling ? 1 : 0.6);
+    for (const [ch, v] of Object.entries(pending)) {
+      if (!v || v < 1 || day % CHANNELS[ch as ChannelId].payoutEvery !== 0) continue;
+      cash += v;
+      inflows.push({ label: `${CHANNELS[ch as ChannelId].name} payout`, amount: v });
+      pending[ch as ChannelId] = 0;
+    }
+    if (day % PAYROLL_EVERY === 0) pay('Payroll', payroll);
+    if (day % 30 === 0) pay('Admin & overhead', overhead);
     for (const b of s.bills) {
       const due = b.dueDay === day || (!!b.everyDays && day > b.dueDay && (day - b.dueDay) % b.everyDays === 0);
-      if (due && b.category !== 'payroll') cash -= b.amount;
+      if (due && b.category !== 'payroll') pay(b.label, b.amount);
     }
-    for (const r of s.receivables) if (r.dueDay === day) cash += r.amount;
-    for (const p of s.payables ?? []) if (p.dueDay === day) cash -= p.amount;
-    if (s.loan && s.loan.dueDay === day) cash -= s.loan.amount;
-    out.push(Math.round(cash));
+    for (const r of s.receivables)
+      if (r.dueDay === day) {
+        cash += r.amount;
+        inflows.push({ label: r.label, amount: r.amount });
+      }
+    for (const p of s.payables ?? []) if (p.dueDay === day) pay(p.label, p.amount);
+    if (s.loan && s.loan.dueDay === day) pay(s.loan.label, s.loan.amount);
+    out.push({ day, cash: Math.round(cash), inflows, outflows });
   }
   return out;
 }

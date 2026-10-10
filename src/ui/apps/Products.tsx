@@ -1,21 +1,14 @@
 import { useState } from 'react';
-import { CATEGORIES, PACKAGING_COST } from '../../sim/data';
-import { averageRating, avgDailyOrders, def, liveProducts, stockDays, trendMult } from '../../sim/economics';
-import { addProduct, assignBrand, productSlots, research, researchLevel, researchProduct, retireProduct, toggleShortlist } from '../../sim/engine';
+import { CATEGORIES } from '../../sim/data';
+import { averageRating, avgDailyOrders, def, liveProducts, roughKeep, stockDays, trendMult } from '../../sim/economics';
+import { addProduct, assignBrand, digHours, digPool, productSlots, research, researchLevel, retireProduct, toggleShortlist } from '../../sim/engine';
 import type { CategoryId, GameState } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle, Pips, Sparkline } from '../bits';
 import { money } from '../format';
 import { ProductImage } from '../photos';
 
-/** Rough profit per order at the reference price, shipped by air from a mid-range supplier. */
-function estimate(game: GameState, pid: string) {
-  const d = def(game, pid);
-  const landed = d.baseUnitCost + d.airFreight;
-  const fees = d.refPrice * 0.03 + 0.3;
-  const keep = d.refPrice - landed - d.shipToCustomer - PACKAGING_COST.basic - fees;
-  return { landed, keep, margin: keep / d.refPrice };
-}
+const estimate = roughKeep;
 
 function forecast(game: GameState, pid: string): number[] {
   return Array.from({ length: 13 }, (_, k) => trendMult(game, pid, game.day + k * 5));
@@ -38,6 +31,13 @@ export function Products() {
   const shown = candidates.filter((id) => cat === 'all' || def(game, id).category === cat);
   const shortlist = game.shortlist.filter((id) => candidates.includes(id));
 
+  const pool = digPool(game).length;
+  const dig = () => {
+    if (act(research)) return;
+    const found = useGame.getState().game.revealed.at(-1);
+    if (found) setModal({ kind: 'dig', productId: found });
+  };
+
   const sell = (id: string) => {
     if (!act(addProduct, id)) {
       setProduct(id);
@@ -52,7 +52,7 @@ export function Products() {
         title={first ? 'Find your first product' : 'Products'}
         sub={
           first
-            ? 'Your first product is the big decision. Research across niches (quick scan 1h, deep dive 2h of founder time), shortlist the best, compare, then commit.'
+            ? 'Your first product is the big decision. Dig for leads (1h each), investigate the market, deep-dive the promising ones, shortlist, compare, then commit.'
             : `You sell ${live.length} of ${slots === 99 ? '∞' : slots} possible products at this stage.`
         }
       />
@@ -185,25 +185,41 @@ export function Products() {
 
       <div className="row between" style={{ marginTop: 18 }}>
         <h3 style={{ margin: 0 }}>Research board</h3>
-        {!first && (
-          <button className="small" onClick={() => act(research)} title="Spend 3 founder hours digging for a product nobody's selling yet">
-            🔎 Dig for new products (3h)
+        <span className="row" style={{ gap: 8 }}>
+          <span className="tiny muted">{pool ? `${pool} lead${pool === 1 ? '' : 's'} out there` : 'No new leads right now'}</span>
+          <button className={first && candidates.length < 3 ? 'primary' : 'small'} onClick={dig} disabled={!pool} title="Dig through marketplaces, forums and trends for one random product idea">
+            ⛏️ Dig for products ({digHours(game)}h)
           </button>
-        )}
+        </span>
       </div>
-      <div className="options" style={{ margin: '8px 0' }}>
-        <button className={cat === 'all' ? 'on' : ''} onClick={() => setCat('all')}>
-          All niches
-        </button>
-        {cats.map((c) => (
-          <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>
-            {CATEGORIES[c].emoji} {CATEGORIES[c].name}
+      {!candidates.length && first && (
+        <div className="callout" style={{ margin: '10px 0', textAlign: 'center' }}>
+          <div className="huge" style={{ fontSize: 46 }}>
+            ⛏️
+          </div>
+          <b>Your board is empty.</b> Nobody hands you a winning product. Dig through marketplaces, forums and trends: each dig turns up one random lead. Then investigate it and decide.
+          <div style={{ marginTop: 10 }}>
+            <button className="primary" onClick={dig}>
+              ⛏️ Start digging ({digHours(game)}h)
+            </button>
+          </div>
+        </div>
+      )}
+      {cats.length > 1 && (
+        <div className="options" style={{ margin: '8px 0' }}>
+          <button className={cat === 'all' ? 'on' : ''} onClick={() => setCat('all')}>
+            All niches
           </button>
-        ))}
-      </div>
+          {cats.map((c) => (
+            <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>
+              {CATEGORIES[c].emoji} {CATEGORIES[c].name}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="cards">
         {shown.map((id) => card(id))}
-        {!shown.length && <p className="muted">Nothing new here right now. New products appear over time and as you grow.</p>}
+        {!shown.length && !first && <p className="muted">No leads on the board. Dig to find more; new trends turn up over time and as you grow.</p>}
       </div>
     </div>
   );
@@ -258,8 +274,8 @@ export function Products() {
         {id === 'dogbowl' && first && lvl < 1 && <span className="pill good">Good first pick</span>}
         <div className="row" style={{ gap: 6 }}>
           {lvl < 1 && (
-            <button className="small" onClick={() => act(researchProduct, id, 1)}>
-              🔎 Quick scan (1h)
+            <button className="small" onClick={() => setModal({ kind: 'quiz', productId: id })}>
+              🔎 Investigate (1h)
             </button>
           )}
           {lvl === 1 && (

@@ -17,7 +17,8 @@ export function currentGoal(s: GameState): Goal {
   const pid = ids[0];
   if (!pid) {
     const researched = Object.keys(s.research).length;
-    if (researched < 2) return { title: 'Research products', hint: 'Quick-scan a few products in different niches in the Trend Scanner (1 founder hour each).', tab: 'products' };
+    if (s.revealed.length < 3 && researched < 2) return { title: 'Dig for products', hint: 'Hit ⛏️ Dig in the Trend Scanner. Each dig turns up one random product lead (1 founder hour).', tab: 'products' };
+    if (researched < 2) return { title: 'Investigate your leads', hint: 'Read the market data on a few leads and call what it means (1 founder hour each).', tab: 'products' };
     if (s.shortlist.length < 2) return { title: 'Build a shortlist', hint: 'Deep-dive the promising ones and ☆ shortlist 2–5 to compare side by side.', tab: 'products' };
     return { title: 'Pick your first product', hint: 'Compare your shortlist and commit. Your first product is the big decision.', tab: 'products' };
   }

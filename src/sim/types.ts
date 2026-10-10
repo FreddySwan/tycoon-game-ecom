@@ -653,7 +653,7 @@ export interface GameState {
   regions: Partial<Record<RegionId, { entered: boolean; warehouse: boolean; day: number }>>;
   wholesale: WholesaleOrder[];
   lab: LabProject[];
-  adPolicy: { maxSharePct: number; floor: number; marginPct: number };
+  adPolicy: { maxSharePct: number; floor: number; marginPct: number; /** Skip ad spend on products with no stock; resumes when stock arrives. */ pauseOOS?: boolean };
   /** Temporary deals and effects from offers, e.g. { key: 'seaFreight', mult: 0.75, until: 120 }. */
   modifiers: Modifier[];
   autopilot: { staffing: boolean; buildout: boolean };
