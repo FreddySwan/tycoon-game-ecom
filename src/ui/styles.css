@@ -1027,3 +1027,6 @@ input[type='number'] {
 .screen a:hover {
   color: var(--accent-ink);
 }
+.screen {
+  overflow-x: auto;
+}
