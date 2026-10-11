@@ -77,7 +77,7 @@ function founder(s: GameState, storeScore = 4) {
   if (hasSkill(s, 'adSpy')) for (const pid of liveProducts(s)) if ((s.products[pid].creativeQuality ?? 0) < 0.8) E.completeCreativeResearch(s, pid, 4);
   for (const m of s.story.messages) {
     if (!m.choices || m.answer) continue;
-    const want = m.beat.startsWith('visit') ? (s.story.energy < 55 ? 'hang' : 'help') : ({ momMoney: s.cash < 300 ? 'take' : 'decline', burnout: 'rest', garage: 'yes', class: 'go' } as Record<string, string>)[m.beat];
+    const want = m.beat.startsWith('visit') ? (s.story.helpDay === undefined || s.story.bond.sam > 60 ? 'help' : 'hang') : ({ momMoney: s.cash < 300 ? 'take' : 'decline', graduationMaya: 'go', dadBirthday: 'go', classmates: 'hard', garage: 'yes', class: 'go' } as Record<string, string>)[m.beat];
     E.answerMessage(s, m.id, want ?? m.choices[0].id);
   }
   if (s.stage >= 2 && s.cash > 25000) for (const who of ['mom', 'sam', 'maya'] as const) E.repayDebt(s, who, s.story.debt[who]);

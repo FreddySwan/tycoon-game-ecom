@@ -152,7 +152,7 @@ export const useGame = create<UIState>((set, get) => ({
 
   tick: (ms) => {
     const { speed, dayProgress, game } = get();
-    if (!speed || E.isBlocked(game) || get().modal) return;
+    if (!speed || E.isBlocked(game) || get().modal || game.story?.scenes?.length) return;
     const p = dayProgress + (ms * speed) / DAY_MS;
     if (p < 1) {
       set({ dayProgress: p });

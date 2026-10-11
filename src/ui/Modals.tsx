@@ -6,7 +6,7 @@ import { ProductImage, ProductShot } from './photos';
 import { MarketScan } from './MarketScan';
 import { DigReveal, Investigate } from './Discovery';
 import { CreativeResearch, StoreBuilder } from './Builders';
-import { Phone } from './Phone';
+import { Phone, StoryScene } from './Phone';
 import type { Difficulty, MilestoneId, PhotoChoice, SupplierId } from '../sim/types';
 import { sfx } from '../state/sound';
 import { useGame } from '../state/store';
@@ -23,6 +23,7 @@ export function Modals() {
   if (!game.flags.introSeen) return <Intro />;
   if (game.status === 'lost') return <Lost />;
   if (crisis) return <Crisis />;
+  if (game.story?.scenes?.length && !modal) return <StoryScene />;
   if (ambition && !modal) return <Ambition id={ambition} />;
   if (game.won && !game.flags.winSeen && !modal) return <Won />;
   if (!modal) return null;
@@ -138,7 +139,7 @@ function Intro() {
               You don’t know how any of this works yet. Start in <b>SkillUp</b>: a product research tool, then the ads course. Then <b>dig for product ideas</b>, investigate each market, and pick one.
             </p>
             <p>
-              First goal: launch it and make your <b>first profitable reorder</b>. Watch your phone: the people who backed you will check in. And watch your energy: you can’t work 10-hour days forever.
+              First goal: launch it and make your <b>first profitable reorder</b>. Watch your phone: the people who backed you will check in, and Dad has a deal for you soon.
             </p>
           </div>
           <p className="tiny muted">Rent is $900 every 30 days. Time only moves when you press play or skip ahead.</p>

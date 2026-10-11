@@ -67,12 +67,13 @@ liquidation) before the business closes.
 - *Ads:* a checkbox (on by default) stops Scrollr and Seekly spend on out-of-stock products until stock arrives.
 
 **Round 5 additions:**
-- *Story:* you're a college dropout who borrowed $4,000 from Mom, Sam and Maya. A short intro sets it up; texts arrive
-  on your phone as the business grows (Dad's "one sale isn't a business", the garage shelves, the class talk, the
-  finale). Friends invite you out every few weeks: hang out (−3h, +energy), ask them to help pack (+6h tomorrow) or
-  decline. Pay back each lender from the phone; paying everyone back is a story milestone.
-- *Energy:* full days drain the founder's energy, easy days restore it. Below 35% you lose 2 founder hours a day,
-  below 15% you lose 4.
+- *Story:* you're a college dropout who borrowed $4,000 from Mom, Sam and Maya. The story runs in chapters, each
+  with a goal shown in the left panel: first sale; Dad's deal ($10k of sales in a month before Sep 1, Y1, or a second
+  chance by New Year); paying everyone back; the garage; the first hire; a $50k month; the warehouse; $1M lifetime
+  sales; and a commencement speech at the university you left. Chapter scenes play between them.
+- *Phone:* texts from Mom, Dad, Sam and Maya, some with choices: Maya's graduation, Dad's birthday dinner (each
+  costs 5 founder hours the next day), Dad's garage shelves, a class talk. Friends invite you out every few weeks:
+  hanging out (−3h) builds goodwill, which you can spend asking them to help pack (+6h tomorrow).
 - *SkillUp:* courses (study them with founder hours), software (monthly) and packing gear. TrendHound Pro is needed to
   investigate products, the Ads Launchpad course to run Scrollr ads, Search Ads Bootcamp for Seekly, AdSpy Library
   for competitor research. Gear speeds up hand packing (now 15 min an order before gear).

@@ -1,12 +1,12 @@
-import { CHARACTERS } from '../data';
-import { def, founderMaxHours, hasSkill, hoursLeft, liveProducts, round2 } from '../economics';
+import { CHAPTER_ORDER, CHAPTERS, CHARACTERS, DEAL } from '../data';
+import { def, hasSkill, headcount, hoursLeft, liveProducts, round2, trailing } from '../economics';
 import { chance, pick } from '../rng';
-import type { CharacterId, GameState, StoryMessage } from '../types';
+import type { ChapterId, CharacterId, GameState, StoryMessage } from '../types';
 import { type ActionResult, nextId, notify, spendCash } from './core';
 
-// The founder's story: a college dropout who borrowed $4,000 from Mom, Sam and Maya to prove dropping out
-// wasn't a mistake. Texts arrive as the business grows; some ask you to choose, and choices cost or earn
-// founder hours, energy and goodwill.
+// The founder's story: a college dropout who borrowed $4,000 from Mom, Sam and Maya to prove to Dad (and
+// themselves) that they can build a real business. It runs in chapters, each with a goal; texts arrive on the
+// phone along the way, and some ask you to choose. Choices cost or earn founder hours and goodwill.
 
 type Choice = NonNullable<StoryMessage['choices']>[number];
 
@@ -27,38 +27,133 @@ function once(s: GameState, beat: string, when: boolean, fire: () => void): void
 const bond = (s: GameState, who: CharacterId, d: number) => {
   s.story.bond[who] = Math.max(0, Math.min(100, s.story.bond[who] + d));
 };
-const energy = (s: GameState, d: number) => {
-  s.story.energy = Math.max(0, Math.min(100, s.story.energy + d));
-};
+
+/** How much Sam and Maya are up for helping out (0..100). */
+export function goodwill(s: GameState): number {
+  return (s.story.bond.sam + s.story.bond.maya) / 2;
+}
+
+// ───────────────────────────── chapters ─────────────────────────────
+
+export interface ChapterProgress {
+  value: number;
+  target: number;
+  label: string;
+  deadline?: number;
+}
+
+export function chapterProgress(s: GameState, id: ChapterId = s.story.chapter): ChapterProgress {
+  const debt = s.story.debt.mom + s.story.debt.sam + s.story.debt.maya;
+  const month = trailing(s, 30).revenue;
+  switch (id) {
+    case 'dropout':
+      return { value: Math.min(1, s.shipped), target: 1, label: s.shipped ? 'First sale!' : 'No sales yet' };
+    case 'deal':
+    case 'secondChance':
+      return { value: s.story.best30, target: DEAL.target, label: `Best 30 days: $${Math.round(s.story.best30).toLocaleString()} of $10,000`, deadline: id === 'deal' ? DEAL.deadline : DEAL.secondDeadline };
+    case 'payback': {
+      const total = 4000 + Math.max(0, debt - 4000);
+      return { value: total - debt, target: total, label: `$${(total - debt).toLocaleString()} of $${total.toLocaleString()} paid back` };
+    }
+    case 'garage':
+      return { value: s.stage >= 2 ? 1 : 0, target: 1, label: s.stage >= 2 ? 'Moved!' : 'Still in the apartment' };
+    case 'firstHire':
+      return { value: Math.min(1, headcount(s)), target: 1, label: `${headcount(s)} employees` };
+    case 'fifty':
+      return { value: month, target: 50000, label: `Last 30 days: $${Math.round(month).toLocaleString()} of $50,000` };
+    case 'warehouse':
+      return { value: s.stage >= 3 ? 1 : 0, target: 1, label: s.stage >= 3 ? 'Moved!' : 'Not yet' };
+    case 'million': {
+      const life = s.counters.revenueLifetime ?? 0;
+      return { value: life, target: 1e6, label: `$${Math.round(life).toLocaleString()} of $1,000,000 lifetime sales` };
+    }
+    case 'graduation':
+      return { value: s.stage >= 5 ? 1 : 0, target: 1, label: `Stage ${s.stage} of 5` };
+    default:
+      return { value: 1, target: 1, label: '' };
+  }
+}
+
+function nextChapter(id: ChapterId): ChapterId {
+  const from = id === 'secondChance' ? 'deal' : id;
+  return CHAPTER_ORDER[Math.min(CHAPTER_ORDER.length - 1, CHAPTER_ORDER.indexOf(from) + 1)];
+}
+
+function advanceChapter(s: GameState, done: ChapterId, failed = false): void {
+  const st = s.story;
+  const next = failed && done === 'deal' ? 'secondChance' : nextChapter(done);
+  st.scenes.push(failed ? { failed: done, next } : { done, next });
+  st.chapter = next;
+  st.chapterStart = s.day;
+  notify(s, 'milestone', failed ? `Chapter missed: ${CHAPTERS[done].title}. Next: ${CHAPTERS[next].title}.` : `🎓 Chapter complete: ${CHAPTERS[done].title}. Next: ${CHAPTERS[next].title}.`, true);
+  if (next === 'deal') st.best30 = trailing(s, 30).revenue;
+}
+
+/** Check the current chapter (and chain through any that are already done). */
+function checkChapter(s: GameState): void {
+  const st = s.story;
+  st.best30 = Math.max(st.best30, trailing(s, 30).revenue);
+  for (let guard = 0; guard < 4; guard++) {
+    const id = st.chapter;
+    if (id === 'epilogue') return;
+    const p = chapterProgress(s, id);
+    if (p.value >= p.target) {
+      if (id === 'deal' || id === 'secondChance') bond(s, 'dad', 20);
+      if (id === 'graduation') bond(s, 'dad', 25);
+      advanceChapter(s, id);
+      continue;
+    }
+    if (p.deadline !== undefined && s.day > p.deadline) {
+      if (id === 'deal') {
+        bond(s, 'dad', -10);
+        advanceChapter(s, id, true);
+        continue;
+      }
+      // Missed the second chance too: night classes to keep the peace, and the business carries on.
+      bond(s, 'dad', -10);
+      text(s, 'dad', 'You’re enrolled in night classes. Keep your little business if you want. Weekends.', 'nightClasses');
+      advanceChapter(s, id, true);
+      continue;
+    }
+    return;
+  }
+}
+
+export function dismissScene(s: GameState): ActionResult {
+  s.story.scenes.shift();
+  return null;
+}
+
+// ───────────────────────────── daily texts ─────────────────────────────
 
 /** Day-one texts. */
 export function startStory(s: GameState): void {
   s.story.beats.intro = s.day;
+  s.story.scenes.push({ next: 'dropout' });
   text(s, 'mom', 'Proud of you, whatever your father says. The $2,000 is a loan, not a gift, so make it count. And eat something green today.', 'intro');
-  text(s, 'sam', 'Bro. My car fund is officially in your hands What are you even going to sell?', 'intro');
+  text(s, 'sam', 'Bro. My car fund is officially in your hands. What are you even going to sell?', 'intro');
 }
 
-const VISITS = [
-  'Pizza at yours tonight? Maya’s bringing that terrible board game.',
-  'We’re coming over to watch the game. You in or are you “working”?',
-  'Maya got tickets to a show tonight, one spare. Come out for once?',
-  'Taco night at mine. You haven’t left that apartment in a week, man.',
-];
+const VISITS: Record<'sam' | 'maya', string[]> = {
+  sam: ['Pizza at yours tonight? Maya’s bringing that terrible board game.', 'We’re coming over to watch the game. You in or are you “working”?', 'Taco night at mine. You haven’t left that apartment in a week, man.'],
+  maya: ['I got tickets to a show tonight, one spare. Come out for once?', 'Movie night at yours? I’ll bring snacks, Sam’s bringing his opinions.', 'Karaoke tonight. Sam already said yes. Your turn.'],
+};
 
-/** Daily story step: energy, help days, expired choices and new beats. */
-export function storyDay(s: GameState, worked: number): void {
+/** Daily story step: help and away days, expired choices, chapter goals and new texts. */
+export function storyDay(s: GameState): void {
   const st = s.story;
-  // Long days wear you down; short ones let you recover.
-  const max = founderMaxHours(s);
-  if (worked >= max - 0.5) energy(s, -7);
-  else if (worked >= 6) energy(s, -2);
-  else energy(s, 6);
   if (st.helpDay === s.day) {
     s.extraHours += 6;
     notify(s, 'info', 'Sam and Maya showed up with coffee to help pack: +6 founder hours today.');
   }
+  if (st.awayDay === s.day) {
+    s.hoursUsed += Math.min(5, hoursLeft(s));
+    notify(s, 'info', 'You’re out most of today: 5 fewer founder hours.');
+  }
   // Unanswered choices fall back to the last option.
   for (const m of st.messages) if (m.choices && !m.answer && m.expires !== undefined && m.expires <= s.day) answer(s, m, m.choices[m.choices.length - 1].id, true);
+
+  checkChapter(s);
 
   const live = liveProducts(s);
   const store = s.brands[0].store;
@@ -66,7 +161,7 @@ export function storyDay(s: GameState, worked: number): void {
     text(s, 'sam', 'Everyone on the e-com forums says the same thing: don’t pick a product blind, get a research tool first. TrendHound is like $39. It’s in SkillUp.', 'tools'),
   );
   once(s, 'firstProduct', live.length > 0, () => text(s, 'maya', `A ${def(s, live[0]).name.toLowerCase()}?? Honestly… I’d buy that. Founder discount for your old roommate?`, 'firstProduct'));
-  once(s, 'adsCourse', !!store.quality && !hasSkill(s, 'adsBasics'), () =>
+  once(s, 'adsCourse', store.quality != null && !hasSkill(s, 'adsBasics'), () =>
     text(s, 'maya', 'My cousin runs Scrollr ads for a living. She says do NOT touch ads before you’ve done a course, people burn their savings in a week.', 'adsCourse'),
   );
   once(s, 'launch', store.launched, () => text(s, 'mom', 'I shared your store in the family group chat!! Aunt Rosa wants to know if you ship to Florida.', 'launch'));
@@ -74,22 +169,33 @@ export function storyDay(s: GameState, worked: number): void {
     bond(s, 'dad', 5);
     text(s, 'dad', 'Your mother showed me the order. One sale isn’t a business.', 'firstSale');
   });
+  once(s, 'professor', s.day >= 40, () => text(s, 'dad', 'Your old economics professor says 9 out of 10 startups fail. Thought you should see this.', 'professor'));
   once(s, 'momMoney', s.stage === 1 && s.cash < 500 && s.day > 10, () =>
     text(s, 'mom', 'Your aunt says things look slow. Do you need money? Don’t tell your father.', 'momMoney', [
       { id: 'take', label: 'Take $500', hint: 'Cash now, owe Mom more' },
       { id: 'decline', label: 'I’ve got this', hint: 'Mom will be proud' },
     ]),
   );
-  once(s, 'burnout', st.energy < 35, () =>
-    text(s, 'sam', 'Dude, you look wrecked on video calls. Take a night off before you break.', 'burnout', [
-      { id: 'rest', label: 'Take the night off', hint: '−4h today, big energy boost' },
-      { id: 'push', label: 'Keep pushing', hint: 'Stay tired, fewer hours each day' },
-    ]),
+  once(s, 'graduationMaya', s.day >= 76, () =>
+    text(s, 'maya', 'My graduation is tomorrow. You’re coming, right? Everyone keeps asking where you disappeared to.', 'graduationMaya', [
+      { id: 'go', label: 'I’ll be there', hint: '−5 founder hours tomorrow' },
+      { id: 'skip', label: 'Can’t, orders to ship', hint: 'Maya will remember' },
+    ], 1),
   );
-  once(s, 'profit', !!s.milestones.first_profitable_reorder, () =>
-    text(s, 'sam', 'Wait. You’re actually making MONEY?? Maybe I get my car after all', 'profit'),
+  once(s, 'classmates', s.day >= 120, () =>
+    text(s, 'sam', 'The old class group chat is nothing but internship offers. You good, man?', 'classmates', [
+      { id: 'great', label: 'Never been better', hint: '' },
+      { id: 'hard', label: 'Honestly? It’s hard', hint: '' },
+    ], 3),
   );
-  once(s, 'garage', s.stage >= 2, () =>
+  once(s, 'dadBirthday', s.day >= 150, () =>
+    text(s, 'mom', 'It’s your father’s birthday on Sunday. Come for dinner? He won’t say it, but he wants you there.', 'dadBirthday', [
+      { id: 'go', label: 'I’ll come', hint: '−5 founder hours tomorrow' },
+      { id: 'skip', label: 'Too busy this week', hint: 'Dad notices' },
+    ], 2),
+  );
+  once(s, 'profit', !!s.milestones.first_profitable_reorder, () => text(s, 'sam', 'Wait. You’re actually making MONEY?? Maybe I get my car after all.', 'profit'));
+  once(s, 'garageShelves', s.stage >= 2, () =>
     text(s, 'dad', 'Heard you’re renting a garage now. I have steel shelving in the basement. Do you want it or not?', 'garage', [
       { id: 'yes', label: 'Yes, thanks Dad', hint: 'He drives it over himself' },
       { id: 'no', label: 'I’m fine', hint: 'Pride is free' },
@@ -97,7 +203,7 @@ export function storyDay(s: GameState, worked: number): void {
   );
   once(s, 'class', s.stage >= 3, () =>
     text(s, 'maya', 'My old business professor wants you to speak to her class about dropping out and building a company. Seriously.', 'class', [
-      { id: 'go', label: 'Give the talk', hint: 'A day out, students follow your brand' },
+      { id: 'go', label: 'Give the talk', hint: 'Students start following your brand' },
       { id: 'skip', label: 'Too busy', hint: '' },
     ], 4),
   );
@@ -105,25 +211,19 @@ export function storyDay(s: GameState, worked: number): void {
     bond(s, 'dad', 15);
     text(s, 'dad', 'I was wrong about the dropping-out thing. Don’t make me say it twice.', 'dadWrong');
   });
-  once(s, 'finale', s.stage >= 5, () => {
-    bond(s, 'dad', 20);
-    text(s, 'dad', 'Sunday dinner. Bring your team. Your mother is making the lasagna. I’m proud of you, kid.', 'finale');
-    notify(s, 'milestone', '🎓 Story complete: you proved it. (The business doesn’t stop here.)', true);
-  });
 
   // Friends drop by every few weeks while you're still small.
   const lastVisit = Math.max(0, ...Object.entries(st.beats).filter(([k]) => k.startsWith('visit')).map(([, d]) => d));
   if (s.stage <= 2 && s.day >= 6 && s.day - lastVisit >= 16 && chance(s, 0.2)) {
     const beat = `visit${s.day}`;
     st.beats[beat] = s.day;
-    text(s, chance(s, 0.5) ? 'sam' : 'maya', pick(s, VISITS), beat, [
-      { id: 'hang', label: 'Hang out tonight', hint: '−3h today, +energy, friends happy' },
-      { id: 'help', label: 'Come help me pack instead', hint: '+6h tomorrow; don’t ask every time' },
-      { id: 'decline', label: 'Can’t, too busy', hint: 'Keep working, −energy, they’re hurt' },
+    const who = chance(s, 0.5) ? 'sam' : 'maya';
+    text(s, who, pick(s, VISITS[who]), beat, [
+      { id: 'hang', label: 'Hang out tonight', hint: '−3h today, builds goodwill' },
+      { id: 'help', label: 'Come help me pack instead', hint: goodwill(s) >= 45 ? '+6h tomorrow, spends goodwill' : 'They’re not feeling it lately' },
+      { id: 'decline', label: 'Can’t, too busy', hint: 'They’ll be hurt' },
     ], 1);
   }
-  // Mom checks in when you're running on empty.
-  if (st.energy < 25 && s.day % 9 === 0) text(s, 'mom', 'You sound exhausted on the phone. Sleep. The orders will still be there tomorrow.', `tired${s.day}`);
 }
 
 function answer(s: GameState, m: StoryMessage, choiceId: string, expired = false): void {
@@ -137,17 +237,17 @@ function answer(s: GameState, m: StoryMessage, choiceId: string, expired = false
   if (m.beat.startsWith('visit')) {
     if (choiceId === 'hang') {
       s.hoursUsed += Math.min(3, hoursLeft(s));
-      energy(s, 22);
-      friends(6);
+      friends(8);
       st.guestsDay = s.day;
     } else if (choiceId === 'help') {
-      const asked = Object.values(st.messages).filter((x) => x.beat.startsWith('visit') && x.answer === 'help').length;
-      st.helpDay = s.day + 1;
-      friends(asked > 2 ? -6 : -1);
-    } else {
-      energy(s, -4);
-      friends(expired ? -6 : -4);
-    }
+      if (goodwill(s) >= 45) {
+        st.helpDay = s.day + 1;
+        friends(-10);
+      } else {
+        friends(-2);
+        text(s, m.from, 'Lol no. You never even hang out with us anymore.', 'helpRefused');
+      }
+    } else friends(expired ? -6 : -4);
     return;
   }
   switch (m.beat) {
@@ -157,17 +257,31 @@ function answer(s: GameState, m: StoryMessage, choiceId: string, expired = false
         st.debt.mom += 500;
       } else bond(s, 'mom', 5);
       break;
-    case 'burnout':
-      if (choiceId === 'rest') {
-        s.hoursUsed += Math.min(4, hoursLeft(s));
-        energy(s, 35);
-        bond(s, 'sam', 3);
+    case 'graduationMaya':
+      if (choiceId === 'go') {
+        st.awayDay = s.day + 1;
+        bond(s, 'maya', 15);
+        text(s, 'maya', 'You came!! Everyone asked about your store. My dad wants to buy three.', 'graduationThanks');
+      } else {
+        bond(s, 'maya', -15);
+        text(s, 'maya', 'Saw your story. Looked “busy”. Cool.', 'graduationHurt');
       }
+      break;
+    case 'classmates':
+      bond(s, 'sam', choiceId === 'hard' ? 10 : 2);
+      text(s, 'sam', choiceId === 'hard' ? 'Respect for saying it. For what it’s worth, I’d rather be doing what you’re doing.' : 'Knew it. Don’t forget us when you’re rich.', 'classmatesReply');
+      break;
+    case 'dadBirthday':
+      if (choiceId === 'go') {
+        st.awayDay = s.day + 1;
+        bond(s, 'dad', 12);
+        bond(s, 'mom', 8);
+        if (trailing(s, 30).revenue > 5000) text(s, 'mom', 'After you left, your father asked me how “these Scrollr ads” work. He’s been reading about it all night.', 'birthdayAfter');
+      } else bond(s, 'dad', -8);
       break;
     case 'garage':
       if (choiceId === 'yes') {
         bond(s, 'dad', 12);
-        energy(s, 8);
         s.counters.storageBonus = (s.counters.storageBonus ?? 0) + 400;
         text(s, 'dad', 'Shelves are in. Don’t stack them crooked.', 'garageDone');
       }
@@ -175,7 +289,6 @@ function answer(s: GameState, m: StoryMessage, choiceId: string, expired = false
     case 'class':
       if (choiceId === 'go') {
         for (const b of s.brands) b.awareness += 1500;
-        energy(s, 10);
         bond(s, 'maya', 8);
       }
       break;
@@ -196,10 +309,10 @@ export function readMessages(s: GameState): ActionResult {
   return null;
 }
 
-const THANKS: Record<'mom' | 'sam' | 'maya', string[]> = {
-  mom: ['You didn’t have to pay me back yet! …But I’m keeping it. I’m buying your father a new drill and telling him it’s from you.'],
-  sam: ['THE CAR FUND LIVES. You absolute legend.'],
-  maya: ['Paid back with interest-free vibes. I’m telling everyone I was your first investor.'],
+const THANKS: Record<'mom' | 'sam' | 'maya', string> = {
+  mom: 'You didn’t have to pay me back yet! …But I’m keeping it. I’m buying your father a new drill and telling him it’s from you.',
+  sam: 'THE CAR FUND LIVES. You absolute legend.',
+  maya: 'Paid back in full. I’m telling everyone I was your first investor.',
 };
 
 /** Pay back the people who lent you the starting money. Not an expense: it's paying off a loan. */
@@ -213,13 +326,13 @@ export function repayDebt(s: GameState, who: 'mom' | 'sam' | 'maya', amount: num
   bond(s, who, 4);
   if (s.story.debt[who] === 0) {
     bond(s, who, 10);
-    text(s, who, THANKS[who][0], `repaid-${who}`);
+    text(s, who, THANKS[who], `repaid-${who}`);
   }
   const d = s.story.debt;
   once(s, 'allRepaid', d.mom + d.sam + d.maya === 0, () => {
     bond(s, 'dad', 15);
     text(s, 'dad', 'Your mother says you paid everyone back. That’s more than I managed at your age.', 'allRepaid');
-    notify(s, 'milestone', '🎓 Paid back everyone who believed in you.', true);
   });
+  checkChapter(s);
   return null;
 }

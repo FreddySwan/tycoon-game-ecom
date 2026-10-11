@@ -741,9 +741,15 @@ export interface StoryMessage {
   beat: string;
 }
 
+export type ChapterId = 'dropout' | 'deal' | 'secondChance' | 'payback' | 'garage' | 'firstHire' | 'fifty' | 'warehouse' | 'million' | 'graduation' | 'epilogue';
+
 export interface StoryState {
-  /** 0..100. Long days drain it; rest and friends restore it. Low energy means fewer founder hours. */
-  energy: number;
+  chapter: ChapterId;
+  chapterStart: number;
+  /** Best 30-day sales so far (for Dad's deal). */
+  best30: number;
+  /** Story scenes waiting to be shown, oldest first. */
+  scenes: { done?: ChapterId; failed?: ChapterId; next: ChapterId }[];
   /** What the founder still owes the people who lent the starting $4,000. */
   debt: Record<'mom' | 'sam' | 'maya', number>;
   /** 0..100 per person. */
@@ -755,4 +761,6 @@ export interface StoryState {
   guestsDay?: number;
   /** Day friends come to help (extra hours). */
   helpDay?: number;
+  /** Day you're out (graduation, family dinner): fewer founder hours. */
+  awayDay?: number;
 }

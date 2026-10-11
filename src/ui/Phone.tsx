@@ -1,6 +1,6 @@
-import { CHARACTERS } from '../sim/data';
-import { answerMessage, readMessages, repayDebt } from '../sim/engine';
-import type { CharacterId, StoryMessage } from '../sim/types';
+import { CHAPTER_ORDER, CHAPTERS, CHARACTERS } from '../sim/data';
+import { answerMessage, chapterProgress, dismissScene, goodwill, readMessages, repayDebt } from '../sim/engine';
+import type { ChapterId, CharacterId, StoryMessage } from '../sim/types';
 import { useGame } from '../state/store';
 import { money } from './format';
 import { Icon, type IconName } from './icons';
@@ -104,9 +104,9 @@ export function Phone() {
         </div>
         <div className="ph-status">
           <span>
-            <Icon name="zap" /> Energy <b>{Math.round(st.energy)}%</b>
+            <Icon name="users" /> Friends’ goodwill <b>{Math.round(goodwill(game))}%</b>
           </span>
-          <span className="tiny muted">{st.energy < 15 ? 'Exhausted: −4 founder hours a day' : st.energy < 35 ? 'Tired: −2 founder hours a day' : 'Rested'}</span>
+          <span className="tiny muted">{goodwill(game) >= 45 ? 'Sam & Maya will come help pack if you ask' : 'Hang out with them before asking for help'}</span>
         </div>
         <div className="ph-debt">
           <b>Paying back the people who believed in you</b>
@@ -144,6 +144,87 @@ export function Phone() {
             <Bubble key={m.id} m={m} />
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+const chapterNo = (id: ChapterId) => CHAPTER_ORDER.indexOf(id === 'secondChance' ? 'deal' : id) + 1;
+
+/** Left-panel card: the story chapter you're on and how close you are. */
+export function StoryCard() {
+  const game = useGame((s) => s.game);
+  const st = game.story;
+  if (!st?.chapter) return null;
+  const ch = CHAPTERS[st.chapter];
+  const p = chapterProgress(game);
+  const left = p.deadline !== undefined ? p.deadline - game.day : null;
+  return (
+    <div className="story-card">
+      <div className="tiny" style={{ textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 800, color: '#c0712c' }}>
+        <Icon name="book" /> {st.chapter === 'epilogue' ? 'Epilogue' : `Chapter ${chapterNo(st.chapter)}`}
+      </div>
+      <b>{ch.title}</b>
+      <div className="tiny">{ch.goal}</div>
+      {st.chapter !== 'epilogue' && (
+        <>
+          <div className="meter" style={{ margin: '4px 0 2px' }}>
+            <span style={{ width: `${Math.min(1, p.value / p.target) * 100}%` }} />
+          </div>
+          <div className="tiny muted">
+            {p.label}
+            {left !== null && <b className={left < 20 ? 'bad-text' : ''}> · {left > 0 ? `${left} days left` : 'last day!'}</b>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Between chapters: how the last one ended and what's next. */
+export function StoryScene() {
+  const game = useGame((s) => s.game);
+  const act = useGame((s) => s.act);
+  const scene = game.story.scenes[0];
+  if (!scene) return null;
+  const done = scene.done ? CHAPTERS[scene.done] : null;
+  const next = CHAPTERS[scene.next];
+  return (
+    <div className="overlay">
+      <div className="modal story-scene">
+        {done && (
+          <>
+            <div className="tiny" style={{ textTransform: 'uppercase', letterSpacing: 1, fontWeight: 800, color: '#1f9d55' }}>
+              <Icon name="check" /> Chapter complete
+            </div>
+            <h2 style={{ margin: '2px 0 6px' }}>{done.title}</h2>
+            {done.outro.map((t) => (
+              <p key={t}>{t}</p>
+            ))}
+            <hr />
+          </>
+        )}
+        {scene.next !== 'epilogue' ? (
+          <>
+            <div className="tiny" style={{ textTransform: 'uppercase', letterSpacing: 1, fontWeight: 800, color: '#c0712c' }}>
+              <Icon name="book" /> Chapter {chapterNo(scene.next)}
+            </div>
+            <h2 style={{ margin: '2px 0 6px' }} className="row">
+              {next.who && <Avatar who={next.who} size={28} />} {next.title}
+            </h2>
+            {next.intro.map((t) => (
+              <p key={t}>{t}</p>
+            ))}
+            <p className="callout">
+              <b>Goal:</b> {next.goal}
+            </p>
+          </>
+        ) : (
+          <p className="callout">The story you set out to tell is done. The business, and the game, keep going.</p>
+        )}
+        <button className="primary" onClick={() => act(dismissScene)}>
+          Continue
+        </button>
       </div>
     </div>
   );

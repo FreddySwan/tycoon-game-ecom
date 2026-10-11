@@ -29,7 +29,6 @@ export function Hud() {
   const [menu, setMenu] = useState(false);
   const hours = hoursLeft(game);
   const maxHours = founderMaxHours(game) + game.extraHours;
-  const energy = Math.round(game.story?.energy ?? 100);
   const rating = averageRating(game);
   const blocked = isBlocked(game);
   const stock = Object.values(game.products).reduce((a, p) => a + p.inventory.onHand, 0);
@@ -62,14 +61,6 @@ export function Hud() {
           </span>
           <span className="value small">
             {hours.toFixed(1)}/{maxHours}h
-          </span>
-        </div>
-      )}
-      {game.stage <= 2 && (
-        <div className={`stat ${energy < 35 ? 'warn' : ''}`} title="Founder energy. Full days drain it; easy days and friends restore it. Below 35% you lose founder hours.">
-          <span className="label">Energy</span>
-          <span className="value small">
-            <Icon name="zap" /> {energy}%
           </span>
         </div>
       )}

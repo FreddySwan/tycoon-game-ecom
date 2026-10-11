@@ -5,7 +5,7 @@ import { Laptop } from './Laptop';
 import { Modals, Toast } from './Modals';
 import { Feed, GoalNote } from './SidePanel';
 import { LaunchChecklist } from './LaunchChecklist';
-import { PhoneCard } from './Phone';
+import { PhoneCard, StoryCard } from './Phone';
 
 export function App() {
   useGameLoop();
@@ -15,6 +15,7 @@ export function App() {
       <main className="main">
         <section className="left">
           <GoalNote />
+          <StoryCard />
           <PhoneCard />
           <LaunchChecklist />
           <Diorama />

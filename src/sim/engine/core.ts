@@ -341,9 +341,9 @@ export function founderHours(): number {
 }
 
 /** Bring older saves up to the current shape. */
-/** The founder's personal story: energy, who they owe, and the people around them. */
+/** The founder's personal story: the chapter they're on, who they owe, and the people around them. */
 export function newStory(): StoryState {
-  return { energy: 90, debt: { ...STARTING_DEBT }, bond: { mom: 70, dad: 15, sam: 70, maya: 60 }, messages: [], beats: {} };
+  return { chapter: 'dropout', chapterStart: 1, best30: 0, scenes: [], debt: { ...STARTING_DEBT }, bond: { mom: 70, dad: 15, sam: 70, maya: 60 }, messages: [], beats: {} };
 }
 
 export function migrate(s: GameState): GameState {
@@ -355,6 +355,11 @@ export function migrate(s: GameState): GameState {
   if (!s.story) {
     s.story = newStory();
     s.story.beats = { intro: 1, older: 1 };
+  }
+  if (!s.story.chapter) {
+    // Saves from before chapters: start the arc where the business is.
+    Object.assign(s.story, { chapter: s.shipped ? 'deal' : 'dropout', chapterStart: s.day, best30: 0, scenes: [] });
+    delete (s.story as unknown as Record<string, unknown>).energy;
   }
   for (const b of s.brands) if (b.store.quality === undefined) b.store.quality = b.store.launched ? 0.6 : null;
   s.adPolicy ??= { maxSharePct: 20, floor: 100, marginPct: 25 };

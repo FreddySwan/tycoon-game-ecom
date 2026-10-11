@@ -21,8 +21,6 @@ import {
   PACK_SPEED,
   SKILLS,
   DIFFICULTY,
-  TIRED,
-  EXHAUSTED,
   PACKAGING_COST,
   PACKER_RATE,
   RACK_STORAGE,
@@ -452,11 +450,8 @@ export function hasSkill(s: GameState, id: SkillId): boolean {
   return true;
 }
 
-/** Founder hours per day: 10, minus what tiredness costs. */
-export function founderMaxHours(s: GameState): number {
-  const e = s.story?.energy ?? 100;
-  const tired = e < EXHAUSTED.energy ? EXHAUSTED.hours : e < TIRED.energy ? TIRED.hours : 0;
-  return FOUNDER_HOURS - tired;
+export function founderMaxHours(_s: GameState): number {
+  return FOUNDER_HOURS;
 }
 
 export function hoursLeft(s: GameState): number {

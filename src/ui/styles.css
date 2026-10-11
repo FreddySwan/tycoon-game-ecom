@@ -108,6 +108,9 @@ input[type='text'] {
   color: #fff;
   backdrop-filter: blur(6px);
   flex-wrap: wrap;
+  /* Above the laptop so the ☰ menu isn't covered by the tab labels. */
+  position: relative;
+  z-index: 100;
 }
 .hud .brand {
   font-weight: 800;
@@ -1696,4 +1699,18 @@ table.pl .caret {
 .diff.on {
   border-color: #f0a860;
   background: #fff4e6;
+}
+.story-card {
+  background: #fff4e6;
+  border: 2px solid #f2cfa5;
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 2px;
+}
+.story-scene {
+  width: min(560px, 100%);
+}
+.story-scene p {
+  line-height: 1.5;
 }

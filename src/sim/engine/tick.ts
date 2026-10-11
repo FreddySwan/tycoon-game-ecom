@@ -567,7 +567,6 @@ export function advanceDay(s: GameState): void {
   endOfDayFulfillment(s);
   const closing = today(s);
   closing.cash = s.cash;
-  const worked = s.hoursUsed;
   s.hoursUsed = 0;
   s.extraHours = 0;
 
@@ -634,7 +633,7 @@ export function advanceDay(s: GameState): void {
 
   // Slow drifts
   marketDrift(s);
-  storyDay(s, worked);
+  storyDay(s);
   s.discountFatigue = liveProducts(s).some((id) => s.products[id].discountPct > 0) ? Math.min(0.3, s.discountFatigue + 0.02) : Math.max(0, s.discountFatigue - 0.01);
   for (const p of Object.values(s.products)) p.copycat = Math.max(0, p.copycat - 0.0015);
   for (const b of s.brands) {

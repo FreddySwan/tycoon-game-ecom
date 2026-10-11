@@ -26,16 +26,21 @@ interface Placement {
   dx?: number;
 }
 
+/** Floor lamp between the desk and the window. */
+const LAMP = { i: 2.78, j: 0.2 };
+
 const FURNITURE: Placement[] = [
   // Kitchen along the left wall
-  { tex: 'kitchenFridgeSmall_SE', i: 0.3, j: 0.3, fi: 0.55, fj: 0.55 },
+  // Fridge at the bed end of the counter, so its door has room to open
+  { tex: 'kitchenFridgeSmall_SE', i: 0.3, j: 2.95, fi: 0.55, fj: 0.55 },
+  { tex: 'pottedPlant_SE', i: 0.28, j: 0.28, fi: 0.3, fj: 0.3 },
   { tex: 'kitchenSink_SE', i: 0.34, j: 0.92, fi: 0.68, fj: 0.68 },
   { tex: 'kitchenStove_SE', i: 0.34, j: 1.6, fi: 0.68, fj: 0.68 },
   { tex: 'kitchenCabinet_SE', i: 0.34, j: 2.28, fi: 0.68, fj: 0.68 },
   { tex: 'bedSingle_SE', i: 0.85, j: 4.5, fi: 1.7, fj: 0.9 },
   // Desk, lamp and sofa along the right wall
-  { tex: 'desk_SW', i: 1.25, j: 0.32, fi: 1.1, fj: 0.58 },
-  { tex: 'lampRoundFloor_SE', i: 2.15, j: 0.2, fi: 0.3, fj: 0.3 },
+  { tex: 'desk_SW', i: 1.9, j: 0.32, fi: 1.1, fj: 0.58 },
+  { tex: 'lampRoundFloor_SE', i: LAMP.i, j: LAMP.j, fi: 0.3, fj: 0.3 },
   { tex: 'loungeSofa_SW', i: 3.85, j: 0.36, fi: 1.4, fj: 0.7 },
   { tex: 'pottedPlant_SE', i: 4.75, j: 0.22, fi: 0.3, fj: 0.3 },
   // Kitchen table = packing station, long side facing the desk so the founder works behind it
@@ -43,8 +48,8 @@ const FURNITURE: Placement[] = [
 ];
 
 const RUG: Placement = { tex: 'rugRectangle_SE', i: 3.55, j: 1.65, fi: 2.0, fj: 1.7 };
-const CHAIR: Placement = { tex: 'chairDesk_NE', i: 1.25, j: 0.95, fi: 0.43, fj: 0.43 };
-const LAPTOP: Placement = { tex: 'laptop_SW', i: 1.25, j: 0.3, fi: 0.4, fj: 0.32, dy: -46 };
+const CHAIR: Placement = { tex: 'chairDesk_NE', i: 1.9, j: 0.95, fi: 0.43, fj: 0.43 };
+const LAPTOP: Placement = { tex: 'laptop_SW', i: 1.9, j: 0.3, fi: 0.4, fj: 0.32, dy: -46 };
 const TABLE_TOP = { i: 2.15, j: 2.7, h: 40 };
 const WINDOW = { i0: 2.45, i1: 3.45, h0: 38, h1: 88 };
 
@@ -65,7 +70,7 @@ interface Spot {
 
 const SOFA_Z = iso(3.85 + 0.7, 0.36 + 0.35).y;
 const BED_Z = iso(0.85 + 0.85, 4.5 + 0.45).y;
-const CHAIR_Z = iso(1.25 + 0.215, 0.95 + 0.215).y;
+const CHAIR_Z = iso(1.9 + 0.215, 0.95 + 0.215).y;
 
 type SpotId = 'bed' | 'sink' | 'stove' | 'desk' | 'table' | 'sofa';
 
@@ -74,7 +79,7 @@ const SPOTS: Record<SpotId, Spot> = {
   sink: { i: 0.98, j: 0.98, pose: 'work' },
   stove: { i: 0.98, j: 1.62, pose: 'work' },
   // Sitting in the desk chair, mostly hidden behind its backrest
-  desk: { i: 1.25, j: 0.9, via: { i: 1.45, j: 1.45 }, lift: 6, pose: 'sit', over: CHAIR_Z - 4 },
+  desk: { i: 1.9, j: 0.9, via: { i: 2.1, j: 1.45 }, lift: 6, pose: 'sit', over: CHAIR_Z - 4 },
   table: { i: 1.98, j: 1.98, pose: 'work' },
   sofa: { i: 3.85, j: 0.5, via: { i: 3.85, j: 1.1 }, lift: 13, pose: 'sit', over: SOFA_Z },
 };
@@ -83,8 +88,8 @@ const SPOTS: Record<SpotId, Spot> = {
 const OBSTACLES = [
   [1.48, 2.83, 2.3, 3.1], // packing table
   [0, 1.75, 4.0, 5], // bed
-  [0, 0.72, 0.15, 2.65], // kitchen
-  [0.68, 1.82, 0, 0.62], // desk
+  [0, 0.72, 0.15, 3.25], // kitchen and fridge
+  [1.33, 2.47, 0, 0.62], // desk
   [3.1, 4.6, 0, 0.75], // sofa
 ];
 const HUBS = [
@@ -407,7 +412,7 @@ export class ApartmentScene {
     this.lampGlow.clear();
     this.nightGlow.clear();
     if (lampOn) {
-      const c = iso(2.15, 0.2);
+      const c = iso(LAMP.i, LAMP.j);
       this.lampGlow.ellipse(c.x, c.y - 4, 80, 46).fill({ color: 0xffe2a8, alpha: 0.25 });
       this.nightGlow.ellipse(c.x, c.y - 30, 120, 80).fill({ color: 0xffd98a, alpha: 0.12 * n });
     }
