@@ -5,6 +5,7 @@ import { useGame } from '../../state/store';
 import { AppTitle, Options, Toggle } from '../bits';
 import { money, pct, stars } from '../format';
 import { useState } from 'react';
+import { Icon, withIcons } from '../icons';
 
 export function Customers() {
   const game = useGame((s) => s.game);
@@ -18,7 +19,7 @@ export function Customers() {
   function email() {
     if (game.stage < 2) return (
       <>
-        <h3>📧 Email</h3>
+        <h3><Icon name="mail" /> Email</h3>
         <p className="tiny muted">Email unlocks in the Growing Brand stage. Until then, keep shipping happy orders. Every customer who opts in becomes a subscriber.</p>
       </>
     );
@@ -35,7 +36,7 @@ export function Customers() {
     const camps = [...game.emails].reverse();
     return (
       <>
-        <h3>📧 Email</h3>
+        <h3><Icon name="mail" /> Email</h3>
         {game.brands.length > 1 && (
           <div className="picker">
             {game.brands.map((x) => (
@@ -66,7 +67,7 @@ export function Customers() {
           <div className="cards" style={{ margin: '8px 0', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
             {(Object.keys(CAMPAIGNS) as CampaignType[]).map((k) => (
               <button key={k} className={`card ${type === k ? 'selected' : ''}`} style={{ textAlign: 'left', fontWeight: 600 }} onClick={() => { setType(k); setSegment(CAMPAIGNS[k].best); }}>
-                <span style={{ fontSize: 22 }}>{CAMPAIGNS[k].emoji}</span>
+                <span style={{ fontSize: 22 }}>{withIcons(CAMPAIGNS[k].emoji)}</span>
                 <b>{CAMPAIGNS[k].name}</b>
                 <span className="tiny muted">{CAMPAIGNS[k].desc}</span>
               </button>
@@ -123,7 +124,7 @@ export function Customers() {
                   {camps.slice(0, 12).map((c) => (
                     <tr key={c.id}>
                       <td>
-                        {CAMPAIGNS[c.type].emoji} {CAMPAIGNS[c.type].name}
+                        {withIcons(CAMPAIGNS[c.type].emoji)} {CAMPAIGNS[c.type].name}
                         {c.discount ? ` · ${c.discount}% off` : ''}
                         {c.productId ? ` · ${def(game, c.productId).name}` : ''}
                         <div className="tiny muted">
@@ -164,7 +165,7 @@ export function Customers() {
             return (
               <tr key={pid}>
                 <td>
-                  {def(game, pid).emoji} {def(game, pid).name}
+                  {withIcons(def(game, pid).emoji)} {def(game, pid).name}
                 </td>
                 <td className="num">{r.count ? `${(r.sum / r.count).toFixed(2)}★` : '—'}</td>
                 <td style={{ width: 200 }}>
@@ -188,7 +189,7 @@ export function Customers() {
         .map((r, i) => (
           <div key={i} className="review">
             <span className="st">{stars(r.stars)}</span> <b>{r.author}</b> <span className="tiny muted">· {def(game, r.productId)?.name} · day {r.day}</span>
-            <div>{r.text}</div>
+            <div>{withIcons(r.text)}</div>
           </div>
         ))}
 

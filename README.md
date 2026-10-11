@@ -66,6 +66,25 @@ liquidation) before the business closes.
   forecast that models each channel's payout day; a "Money on its way" table with each payout's date and amount.
 - *Ads:* a checkbox (on by default) stops Scrollr and Seekly spend on out-of-stock products until stock arrives.
 
+**Round 5 additions:**
+- *Story:* you're a college dropout who borrowed $4,000 from Mom, Sam and Maya. A short intro sets it up; texts arrive
+  on your phone as the business grows (Dad's "one sale isn't a business", the garage shelves, the class talk, the
+  finale). Friends invite you out every few weeks: hang out (−3h, +energy), ask them to help pack (+6h tomorrow) or
+  decline. Pay back each lender from the phone; paying everyone back is a story milestone.
+- *Energy:* full days drain the founder's energy, easy days restore it. Below 35% you lose 2 founder hours a day,
+  below 15% you lose 4.
+- *SkillUp:* courses (study them with founder hours), software (monthly) and packing gear. TrendHound Pro is needed to
+  investigate products, the Ads Launchpad course to run Scrollr ads, Search Ads Bootcamp for Seekly, AdSpy Library
+  for competitor research. Gear speeds up hand packing (now 15 min an order before gear).
+- *Store builder:* five calls (headline, hero image, above the fold, trust, mobile) set the store's quality, which
+  feeds conversion. Pages take 2 days to set up before launch; rebuild any time.
+- *Competitor ad research:* spot the profitable rival ads, find their hook pattern, write your headline and opener.
+  Sets a per-product creative quality that lifts clicks and conversion.
+- *Difficulty & market drift:* Relaxed, Normal or Hard. Every product you sell drifts: ad costs rise (faster the
+  more you spend), unit costs creep up, competitors erode your share of demand, and random shocks hit. New products
+  start fresh, so the game pushes you to keep finding them. The Products table shows each product's drift.
+- *Pixel icons* (pixelarticons, MIT) replace emojis across the UI and the apartment's speech bubble.
+
 **Admin mode (testing):** open the game with `?admin` or pick "Admin mode" in the ☰ menu. The panel offers unlimited
 cash (never below $1M; not booked to the P&L), unlimited founder hours, +1/7/30/90 day skips, reveal all products,
 jump to any stage with a bot-simulated business (`src/sim/admin.ts`), or force-unlock stages on the current save.

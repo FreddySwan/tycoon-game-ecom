@@ -2,6 +2,7 @@ import { Application, Assets, Container, Graphics, Sprite, Text, Texture } from 
 import { clockHour } from '../sim/calendar';
 import type { GameState } from '../sim/types';
 import { DAY_MS } from '../state/store';
+import { type IconName, SVG } from '../ui/iconSvgs';
 
 /** Iso tile half-width / half-height in world pixels (Kenney renders at 0.5 scale). */
 const A = 52;
@@ -33,7 +34,7 @@ const FURNITURE: Placement[] = [
   { tex: 'kitchenCabinet_SE', i: 0.34, j: 2.28, fi: 0.68, fj: 0.68 },
   { tex: 'bedSingle_SE', i: 0.85, j: 4.5, fi: 1.7, fj: 0.9 },
   // Desk, lamp and sofa along the right wall
-  { tex: 'desk_SE', i: 1.25, j: 0.3, fi: 1.1, fj: 0.58 },
+  { tex: 'desk_SW', i: 1.25, j: 0.32, fi: 1.1, fj: 0.58 },
   { tex: 'lampRoundFloor_SE', i: 2.15, j: 0.2, fi: 0.3, fj: 0.3 },
   { tex: 'loungeSofa_SW', i: 3.85, j: 0.36, fi: 1.4, fj: 0.7 },
   { tex: 'pottedPlant_SE', i: 4.75, j: 0.22, fi: 0.3, fj: 0.3 },
@@ -42,8 +43,8 @@ const FURNITURE: Placement[] = [
 ];
 
 const RUG: Placement = { tex: 'rugRectangle_SE', i: 3.55, j: 1.65, fi: 2.0, fj: 1.7 };
-const CHAIR: Placement = { tex: 'chairDesk_SW', i: 1.25, j: 0.85, fi: 0.43, fj: 0.43 };
-const LAPTOP: Placement = { tex: 'laptop_SE', i: 1.15, j: 0.25, fi: 0.4, fj: 0.32, dy: -46 };
+const CHAIR: Placement = { tex: 'chairDesk_NE', i: 1.25, j: 0.95, fi: 0.43, fj: 0.43 };
+const LAPTOP: Placement = { tex: 'laptop_SW', i: 1.25, j: 0.3, fi: 0.4, fj: 0.32, dy: -46 };
 const TABLE_TOP = { i: 2.15, j: 2.7, h: 40 };
 const WINDOW = { i0: 2.45, i1: 3.45, h0: 38, h1: 88 };
 
@@ -64,6 +65,7 @@ interface Spot {
 
 const SOFA_Z = iso(3.85 + 0.7, 0.36 + 0.35).y;
 const BED_Z = iso(0.85 + 0.85, 4.5 + 0.45).y;
+const CHAIR_Z = iso(1.25 + 0.215, 0.95 + 0.215).y;
 
 type SpotId = 'bed' | 'sink' | 'stove' | 'desk' | 'table' | 'sofa';
 
@@ -71,7 +73,8 @@ const SPOTS: Record<SpotId, Spot> = {
   bed: { i: 0.72, j: 4.52, via: { i: 1.0, j: 3.8 }, lift: 16, pose: 'lie', over: BED_Z },
   sink: { i: 0.98, j: 0.98, pose: 'work' },
   stove: { i: 0.98, j: 1.62, pose: 'work' },
-  desk: { i: 1.85, j: 0.95, pose: 'work' },
+  // Sitting in the desk chair, mostly hidden behind its backrest
+  desk: { i: 1.25, j: 0.9, via: { i: 1.45, j: 1.45 }, lift: 6, pose: 'sit', over: CHAIR_Z - 4 },
   table: { i: 1.98, j: 1.98, pose: 'work' },
   sofa: { i: 3.85, j: 0.5, via: { i: 3.85, j: 1.1 }, lift: 13, pose: 'sit', over: SOFA_Z },
 };
@@ -134,6 +137,7 @@ function route(from: { i: number; j: number }, to: { i: number; j: number }): { 
 interface Activity {
   spot: SpotId;
   label: string;
+  icon: IconName;
 }
 
 /** What the founder is up to at this hour (7 = morning … 25 = 1am). Work adapts to what the business needs. */
@@ -143,23 +147,38 @@ function activityAt(h: number, game: GameState): Activity {
   const adsOn = live.some((p) => p.search.active || Object.values(p.ads).some((c) => c.active));
   const tickets = game.tickets.queue.length > 0;
   const work = (): Activity => {
-    if (orders && Math.floor(h * 2) % 3 !== 0) return { spot: 'table', label: '📦 Packing orders' };
-    const desk: string[] = [];
-    if (adsOn) desk.push('📣 Tuning ads');
-    if (tickets) desk.push('💬 Answering customers');
-    if (!live.length) desk.push('🔎 Researching products');
-    desk.push('📧 Emails', '📊 Checking numbers');
-    return { spot: 'desk', label: desk[Math.floor(h) % desk.length] };
+    if (orders && Math.floor(h * 2) % 3 !== 0) return { spot: 'table', label: 'Packing orders', icon: 'archive' };
+    const desk: [string, IconName][] = [];
+    if (adsOn) desk.push(['Tuning ads', 'radioSignal']);
+    if (tickets) desk.push(['Answering customers', 'chat']);
+    if (!live.length) desk.push(['Researching products', 'search']);
+    desk.push(['Emails', 'mail'], ['Checking numbers', 'chartBar']);
+    const [label, icon] = desk[Math.floor(h) % desk.length];
+    return { spot: 'desk', label, icon };
   };
-  if (h < 7.4) return { spot: 'bed', label: '😴 Snooze…' };
-  if (h < 8.3) return { spot: 'sink', label: '☕ Coffee' };
+  if (game.story?.guestsDay === game.day && h >= 18.5 && h < 23) return { spot: 'sofa', label: 'Friends over', icon: 'happy' };
+  if (h < 7.4) return { spot: 'bed', label: 'Snooze…', icon: 'moon' };
+  if (h < 8.3) return { spot: 'sink', label: 'Coffee', icon: 'coffee' };
   if (h < 12.5) return work();
-  if (h < 13.2) return { spot: 'sink', label: '🥪 Lunch' };
+  if (h < 13.2) return { spot: 'sink', label: 'Lunch', icon: 'coffee' };
   if (h < 18.5) return work();
-  if (h < 19.5) return { spot: 'stove', label: '🍳 Cooking dinner' };
-  if (h < 21.5) return orders && game.backlog.length > 3 ? { spot: 'table', label: '📦 Late packing' } : { spot: 'sofa', label: '📺 Downtime' };
-  if (h < 22.8) return { spot: 'desk', label: '📊 Day review' };
-  return { spot: 'bed', label: '💤 Zzz' };
+  if (h < 19.5) return { spot: 'stove', label: 'Cooking dinner', icon: 'drop' };
+  if (h < 21.5) return orders && game.backlog.length > 3 ? { spot: 'table', label: 'Late packing', icon: 'archive' } : { spot: 'sofa', label: 'Downtime', icon: 'tv' };
+  if (h < 22.8) return { spot: 'desk', label: 'Day review', icon: 'chartBar' };
+  return { spot: 'bed', label: 'Zzz', icon: 'moon' };
+}
+
+/** Pixel icon → Pixi texture (drawn at 2× so it stays crisp when the room is zoomed). */
+const iconTextures = new Map<IconName, Texture>();
+function iconTexture(name: IconName): Texture {
+  let tex = iconTextures.get(name);
+  if (!tex) {
+    const img = new Image(48, 48);
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(SVG[name].replace(/currentColor/g, '#3a3340').replace('<svg ', '<svg width="48" height="48" '))}`;
+    tex = Texture.from(img);
+    iconTextures.set(name, tex);
+  }
+  return tex;
 }
 
 const SKY: [number, number][] = [
@@ -244,9 +263,11 @@ export class ApartmentScene {
   private cat = new Container();
   private catTail = new Graphics();
   private founder = new Container();
+  private friends: Container[] = [];
   private poses: Record<Pose, Container> = {} as Record<Pose, Container>;
   private bubble = new Container();
   private bubbleText!: Text;
+  private bubbleIcon = new Sprite();
   private bubbleBg = new Graphics();
   private zzz!: Text;
   private night = new Graphics();
@@ -367,6 +388,7 @@ export class ApartmentScene {
 
     this.buildCat();
     this.buildFounder();
+    this.buildFriends();
     this.buildNight();
     this.fx.zIndex = 100000;
     this.world.addChild(this.fx);
@@ -473,7 +495,9 @@ export class ApartmentScene {
     }
     this.bubbleText = new Text({ text: '', style: { fontFamily: 'Nunito', fontSize: 11, fontWeight: '800', fill: 0x3a3340 } });
     this.bubbleText.anchor.set(0.5);
-    this.bubble.addChild(this.bubbleBg, this.bubbleText);
+    this.bubbleIcon.anchor.set(0, 0.5);
+    this.bubbleIcon.width = this.bubbleIcon.height = 13;
+    this.bubble.addChild(this.bubbleBg, this.bubbleIcon, this.bubbleText);
     this.bubble.position.set(0, -78);
     this.founder.addChild(this.bubble);
     this.zzz = new Text({ text: 'z Z', style: { fontFamily: 'Nunito', fontSize: 14, fontWeight: '800', fill: 0xffffff, stroke: { color: 0x6b6fa8, width: 3 } } });
@@ -483,11 +507,53 @@ export class ApartmentScene {
     this.world.addChild(this.founder);
   }
 
-  private setBubble(text: string): void {
-    if (text === this.label) return;
-    this.label = text;
+  /** Sam and Maya: they hang out on the sofa or help at the packing table. */
+  private buildFriends(): void {
+    for (const [shirt, hair] of [
+      [0xe0803a, 0x2b1d14],
+      [0xb26ad6, 0x6b3a1b],
+    ]) {
+      const c = new Container();
+      const g = new Graphics();
+      g.roundRect(-9, -9, 10, 4, 2).fill(0x3d4a5c);
+      g.roundRect(-10, -9, 4, 9, 2).fill(0x3d4a5c);
+      g.roundRect(-6, -25, 12, 18, 4).fill(shirt);
+      g.circle(0, -32, 7).fill(0xe8b98a);
+      g.ellipse(0, -36, 7.5, 4).fill(hair);
+      g.scale.set(1.35);
+      c.addChild(g);
+      c.visible = false;
+      this.friends.push(c);
+      this.world.addChild(c);
+    }
+  }
+
+  private updateFriends(game: GameState, h: number): void {
+    const st = game.story;
+    const over = st?.guestsDay === game.day && h >= 18.5 && h < 23;
+    const helping = st?.helpDay === game.day && h >= 9 && h < 18;
+    const spots = over
+      ? [{ i: 3.45, j: 0.5, lift: 13, z: SOFA_Z + 1 }, { i: 4.25, j: 0.5, lift: 13, z: SOFA_Z + 1 }]
+      : [{ i: 2.55, j: 1.98, lift: 0, z: 0 }, { i: 1.45, j: 2.05, lift: 0, z: 0 }];
+    this.friends.forEach((f, k) => {
+      f.visible = over || helping;
+      if (!f.visible) return;
+      const sp = spots[k];
+      const c = iso(sp.i, sp.j);
+      f.position.set(c.x, c.y - sp.lift + (helping ? Math.sin(this.time / 170 + k) * 1.2 : 0));
+      f.zIndex = sp.z || c.y + 2;
+    });
+  }
+
+  private setBubble(text: string, icon: IconName): void {
+    if (`${icon}:${text}` === this.label) return;
+    this.label = `${icon}:${text}`;
     this.bubbleText.text = text;
-    const w = this.bubbleText.width + 14;
+    this.bubbleIcon.texture = iconTexture(icon);
+    this.bubbleIcon.width = this.bubbleIcon.height = 13;
+    const w = this.bubbleText.width + 13 + 18;
+    this.bubbleIcon.position.set(-w / 2 + 8, 0);
+    this.bubbleText.position.set(-w / 2 + 8 + 13 + 4 + this.bubbleText.width / 2, 0);
     this.bubbleBg.clear();
     this.bubbleBg.roundRect(-w / 2, -10, w, 20, 10).fill({ color: 0xffffff, alpha: 0.95 }).stroke({ width: 1.5, color: 0xe2cdb0 });
     this.bubbleBg.poly([-4, 9, 4, 9, 0, 15]).fill(0xffffff);
@@ -538,7 +604,7 @@ export class ApartmentScene {
     this.founder.zIndex = arrived && spot.over ? spot.over + 2 : c.y + 2;
     const facing = this.path[0] ? Math.sign(iso(this.path[0].i, this.path[0].j).x - c.x) || 1 : 1;
     for (const k of ['stand', 'work'] as Pose[]) this.poses[k].scale.x = 1.35 * (this.walking ? facing : 1);
-    this.setBubble(this.walking ? `🚶 ${act.label.replace(/^\S+\s/, '')}` : act.label);
+    this.setBubble(act.label, this.walking ? 'human' : act.icon);
     const sleeping = arrived && pose === 'lie';
     this.bubble.visible = !sleeping;
     this.bubble.position.set(sleeping ? -30 : 0, pose === 'sit' ? -72 : -78);
@@ -627,6 +693,7 @@ export class ApartmentScene {
     this.lastProgress = dayProgress;
     const h = clockHour(dayProgress);
     this.updateFounder(game, h, dt);
+    this.updateFriends(game, h);
     const asleep = this.spotId === 'bed' && !this.walking;
     this.drawSky(h, h > 18.8 && !asleep);
 

@@ -1,4 +1,5 @@
 import { MILESTONE_LABELS, MILESTONE_PICS } from '../../sim/engine';
+import { withIcons } from '../icons';
 import type { MilestoneId } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle } from '../bits';
@@ -15,7 +16,7 @@ export function Wall() {
           const day = game.milestones[id];
           return (
             <div key={id} className={`polaroid ${day ? '' : 'empty'}`} style={{ transform: `rotate(${((id.length * 7) % 9) - 4}deg)` }}>
-              <div className="pic">{day ? MILESTONE_PICS[id] : '?'}</div>
+              <div className="pic">{day ? withIcons(MILESTONE_PICS[id]) : '?'}</div>
               {MILESTONE_LABELS[id]}
               <div className="tiny muted">{day ? `Day ${day}` : 'Not yet'}</div>
             </div>

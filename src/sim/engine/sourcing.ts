@@ -15,7 +15,7 @@ import {
   SUPPLIERS,
   WIN_REORDER_QTY,
 } from '../data';
-import { activeContract, audiences, def, mod, freightPerUnit, incomingUnits, listPrice, liveProducts, round2, steadyDailyUnits } from '../economics';
+import { activeContract, audiences, def, freightPerUnit, hasSkill, incomingUnits, listPrice, liveProducts, mod, round2, steadyDailyUnits } from '../economics';
 import { chance, normal, pick } from '../rng';
 import type { Freight, GameState, ReorderRule, SupplierId } from '../types';
 import { type ActionResult, book, milestone, newProduct, nextId, notify, spendCash, spendOn, useHours } from './core';
@@ -99,6 +99,7 @@ export const RESEARCH_HOURS = { 1: 1, 2: 2 } as const;
 export function completeInvestigation(s: GameState, pid: string, score: number): ActionResult {
   if (!s.revealed.includes(pid) && !s.customDefs[pid]) return 'Not discovered yet.';
   if (researchLevel(s, pid) >= 1) return null;
+  if (!hasSkill(s, 'researchTool')) return 'You need TrendHound Pro (SkillUp) to pull market data.';
   if (score < 3) {
     const err = useHours(s, HOURS.investigate);
     if (err) return err;
@@ -121,6 +122,7 @@ export function researchProduct(s: GameState, pid: string, depth: 1 | 2): Action
 export function completeScan(s: GameState, pid: string, foundComplaint: boolean): ActionResult {
   const cur = researchLevel(s, pid);
   if (cur < 1) return 'Do a quick scan first.';
+  if (!hasSkill(s, 'researchTool')) return 'You need TrendHound Pro (SkillUp) to pull market data.';
   if (cur < 2) {
     const err = useHours(s, RESEARCH_HOURS[2]);
     if (err) return err;

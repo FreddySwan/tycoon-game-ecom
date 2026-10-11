@@ -1,17 +1,18 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { clockLabel, dateLabel } from '../sim/calendar';
-import { FOUNDER_HOURS, STAGES } from '../sim/data';
-import { averageRating, hoursLeft, incomingUnits } from '../sim/economics';
+import { STAGES } from '../sim/data';
+import { averageRating, founderMaxHours, hoursLeft, incomingUnits } from '../sim/economics';
 import { isBlocked } from '../sim/engine';
 import { type Speed, useGame } from '../state/store';
 import { money } from './format';
+import { Icon } from './icons';
 
-const SPEEDS: { v: Speed; label: string; title: string }[] = [
-  { v: 0, label: '⏸', title: 'Pause' },
-  { v: 1, label: '▶', title: 'Play' },
-  { v: 2, label: '▶▶', title: '2× speed' },
-  { v: 4, label: '▶▶▶', title: '4× speed' },
-  { v: 8, label: '⏩', title: '8× speed' },
+const SPEEDS: { v: Speed; label: ReactNode; title: string }[] = [
+  { v: 0, label: <Icon name="pause" />, title: 'Pause' },
+  { v: 1, label: <Icon name="play" />, title: 'Play' },
+  { v: 2, label: <><Icon name="play" />2×</>, title: '2× speed' },
+  { v: 4, label: <><Icon name="play" />4×</>, title: '4× speed' },
+  { v: 8, label: <Icon name="forward" />, title: '8× speed' },
 ];
 
 export function Hud() {
@@ -27,7 +28,8 @@ export function Hud() {
   const toggleAdmin = useGame((s) => s.toggleAdmin);
   const [menu, setMenu] = useState(false);
   const hours = hoursLeft(game);
-  const maxHours = FOUNDER_HOURS + game.extraHours;
+  const maxHours = founderMaxHours(game) + game.extraHours;
+  const energy = Math.round(game.story?.energy ?? 100);
   const rating = averageRating(game);
   const blocked = isBlocked(game);
   const stock = Object.values(game.products).reduce((a, p) => a + p.inventory.onHand, 0);
@@ -35,7 +37,7 @@ export function Hud() {
   return (
     <header className="hud">
       <div className="brand">
-        <span className="logo">📦</span> Unboxed
+        <span className="logo"><Icon name="archive" /></span> Unboxed
       </div>
       <div className="stat">
         <span className="label">Stage {game.stage}</span>
@@ -63,6 +65,14 @@ export function Hud() {
           </span>
         </div>
       )}
+      {game.stage <= 2 && (
+        <div className={`stat ${energy < 35 ? 'warn' : ''}`} title="Founder energy. Full days drain it; easy days and friends restore it. Below 35% you lose founder hours.">
+          <span className="label">Energy</span>
+          <span className="value small">
+            <Icon name="zap" /> {energy}%
+          </span>
+        </div>
+      )}
       <div className="stat">
         <span className="label">Stock</span>
         <span className="value">
@@ -82,14 +92,14 @@ export function Hud() {
           </button>
         ))}
         <button className="skip" disabled={blocked} onClick={skip} title="Jump ahead to the next thing that needs you">
-          Skip ⏭
+          Skip <Icon name="next" />
         </button>
         <button className="mute" onClick={toggleMute} title="Sound">
-          {muted ? '🔇' : '🔊'}
+          <Icon name={muted ? 'volumeX' : 'volume'} />
         </button>
         <div style={{ position: 'relative' }}>
           <button onClick={() => setMenu(!menu)} title="Menu">
-            ☰
+            <Icon name="menu" />
           </button>
           {menu && (
             <div className="menu">
@@ -107,7 +117,7 @@ export function Hud() {
                   toggleAdmin();
                 }}
               >
-                🛠 {admin ? 'Hide admin mode' : 'Admin mode (testing)'}
+                <Icon name="debug" /> {admin ? 'Hide admin mode' : 'Admin mode (testing)'}
               </button>
             </div>
           )}

@@ -5,6 +5,7 @@ import { completeScan } from '../sim/engine';
 import { useGame } from '../state/store';
 import { money } from './format';
 import { ProductImage } from './photos';
+import { Icon } from './icons';
 
 interface Rival {
   name: string;
@@ -58,7 +59,7 @@ export function MarketScan({ productId }: { productId: string }) {
     <div className="overlay">
       <div className="modal" style={{ width: 'min(760px, 100%)' }}>
         <div className="row between">
-          <h2 style={{ margin: 0 }}>🧪 Market scan: {d.name}</h2>
+          <h2 style={{ margin: 0 }}><Icon name="zoomIn" /> Market scan: {d.name}</h2>
           <button className="small ghost" onClick={() => setModal(null)}>
             Close
           </button>
@@ -125,16 +126,16 @@ export function MarketScan({ productId }: { productId: string }) {
         )}
         {step === 3 && (
           <div className="center" style={{ textAlign: 'center' }}>
-            <div className="huge">{score === 3 ? '🎯' : score === 2 ? '👍' : '🧐'}</div>
+            <div className="huge"><Icon name={score === 3 ? 'bullseye' : score === 2 ? 'happy' : 'neutral'} /></div>
             <h2>Scan complete: {score}/3</h2>
             <ul style={{ textAlign: 'left' }}>
-              <li>{picks.gap === gapAnswer ? '✅' : '❌'} The opening: {rivals[gapAnswer].name} has {rivals[gapAnswer].reviews.toLocaleString()} reviews at only {rivals[gapAnswer].rating}★.</li>
+              <li>{picks.gap === gapAnswer ? <Icon name="check" color="#1f9d55" /> : <Icon name="close" color="#d64545" />} The opening: {rivals[gapAnswer].name} has {rivals[gapAnswer].reviews.toLocaleString()} reviews at only {rivals[gapAnswer].rating}★.</li>
               <li>
-                {picks.complaint !== undefined && rivals[picks.complaint].real ? '✅' : '❌'} The real complaint: “{scan?.complaint}”.{' '}
+                {picks.complaint !== undefined && rivals[picks.complaint].real ? <Icon name="check" color="#1f9d55" /> : <Icon name="close" color="#d64545" />} The real complaint: “{scan?.complaint}”.{' '}
                 {picks.complaint !== undefined && rivals[picks.complaint].real && <b>Positioning unlocked: lead with “{d.benefits.find((b) => b.id === scan?.benefit)?.text}” for a trust bonus.</b>}
               </li>
               <li>
-                {picks.price !== undefined && picks.price >= sweet[0] && picks.price <= sweet[1] ? '✅' : '❌'} Price gap: {money(sweet[0])}–{money(sweet[1])} sits between the bargain bin and the premium brands.
+                {picks.price !== undefined && picks.price >= sweet[0] && picks.price <= sweet[1] ? <Icon name="check" color="#1f9d55" /> : <Icon name="close" color="#d64545" />} Price gap: {money(sweet[0])}–{money(sweet[1])} sits between the bargain bin and the premium brands.
               </li>
             </ul>
             <p className="tiny muted">Full research is now unlocked on this product’s card.</p>

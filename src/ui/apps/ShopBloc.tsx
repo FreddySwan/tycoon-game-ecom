@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { MODULES, STORE_SUBSCRIPTION, VIBES } from '../../sim/data';
 import type { ModuleId } from '../../sim/types';
-import { averageRating, def, trustBreakdown } from '../../sim/economics';
+import { averageRating, def, hasSkill, trustBreakdown } from '../../sim/economics';
 import { canShoot, hirePhotographer, launchProblems, launchStore, onStore, setBrandName, setModule, toggleBenefit } from '../../sim/engine';
 import { useGame } from '../../state/store';
 import { AppTitle, Meter } from '../bits';
@@ -9,6 +9,7 @@ import { money, stars } from '../format';
 import { ProductPicker, useProduct } from '../ProductPicker';
 import { ProductImage, ProductShot } from '../photos';
 import { LayoutBuilder } from '../Startup';
+import { Icon, withIcons } from '../icons';
 
 export function ShopBloc() {
   const game = useGame((s) => s.game);
@@ -34,6 +35,7 @@ export function ShopBloc() {
       )}
       <div className="builder">
         <div>
+          {storeCard()}
           <p className="tiny muted">Brand name</p>
           <input type="text" value={brand.name} placeholder="e.g. Pawsitive Pace" onChange={(e) => act(setBrandName, brand.id, e.target.value)} />
           <h3>Store modules</h3>
@@ -41,7 +43,7 @@ export function ShopBloc() {
             const tier = brand.store.modules[m.id];
             return (
               <div key={m.id} className={`module ${tier ? 'on' : ''}`}>
-                <span className="icon">{m.icon}</span>
+                <span className="icon">{withIcons(m.icon)}</span>
                 <div className="grow">
                   <b>
                     {m.name}
@@ -56,12 +58,12 @@ export function ShopBloc() {
                 )}
                 {tier > 0 && tier < m.tiers.length && (
                   <button className="small" onClick={() => act(setModule, brand.id, m.id, tier + 1)} title={m.tiers[tier].name}>
-                    ⬆ {m.tiers[tier].cost && !game.flags[`bought-${brand.id}-${m.id}-${tier + 1}`] ? money(m.tiers[tier].cost) : 'Upgrade'}
+                    <Icon name="arrowUp" /> {m.tiers[tier].cost && !game.flags[`bought-${brand.id}-${m.id}-${tier + 1}`] ? money(m.tiers[tier].cost) : 'Upgrade'}
                   </button>
                 )}
                 {tier > 0 && (
                   <button className="small ghost" onClick={() => act(setModule, brand.id, m.id, 0)} title="Remove">
-                    ✕
+                    <Icon name="close" />
                   </button>
                 )}
               </div>
@@ -72,7 +74,7 @@ export function ShopBloc() {
             <div style={{ marginTop: 12 }}>
               {problems.length > 0 && <p className="tiny muted">To launch: {problems.join(' · ')}</p>}
               <button className="primary" disabled={problems.length > 0} onClick={() => act(launchStore, brand.id)}>
-                🚀 Launch store ({money(STORE_SUBSCRIPTION)}/month)
+                <Icon name="checklist" /> Launch store ({money(STORE_SUBSCRIPTION)}/month)
               </button>
             </div>
           )}
@@ -87,6 +89,40 @@ export function ShopBloc() {
     </div>
   );
 
+  function storeCard() {
+    const q = brand.store.quality;
+    const ready = brand.store.readyDay ?? 0;
+    return (
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="row between">
+          <b>
+            <Icon name="layout" /> Store builder
+          </b>
+          {q != null && <span className={`pill ${q >= 0.75 ? 'good' : q >= 0.5 ? '' : 'warn'}`}>Quality {Math.round(q * 100)}%</span>}
+        </div>
+        {q == null ? (
+          <p className="tiny" style={{ margin: '6px 0' }}>
+            Design your product page: headline, hero image, what goes above the fold, trust, and how it looks on a phone. Your calls set the store’s quality, and quality sets conversion.
+          </p>
+        ) : !brand.store.launched && ready > game.day ? (
+          <p className="tiny" style={{ margin: '6px 0' }}>
+            <Icon name="hourglass" /> Your developer is setting it up: ready in {ready - game.day} day{ready - game.day === 1 ? '' : 's'}.
+          </p>
+        ) : (
+          <div style={{ margin: '6px 0' }}>
+            <Meter value={q} />
+            <p className="tiny muted" style={{ margin: '4px 0 0' }}>
+              Higher quality lifts conversion on every visit. {hasSkill(game, 'storeCourse') ? '' : 'The “Store Pages That Convert” course in SkillUp adds +10% and hints.'}
+            </p>
+          </div>
+        )}
+        <button className={q == null ? 'primary small' : 'small'} onClick={() => setModal({ kind: 'build', brandId: brand.id })}>
+          {q == null ? 'Open the store builder (4h)' : 'Rebuild pages (4h)'}
+        </button>
+      </div>
+    );
+  }
+
   function productPage(pid: string) {
     const p = game.products[pid];
     const d = def(game, pid);
@@ -94,7 +130,7 @@ export function ShopBloc() {
     return (
       <>
         <div className="row between" style={{ marginBottom: 6 }}>
-          <b>📸 Photo</b>
+          <b><Icon name="camera" /> Photo</b>
           <span>{p.photo ? <span className="pill good">{stars(p.photoStars)}</span> : <span className="pill warn">None yet</span>}</span>
         </div>
         <div className="row">
@@ -115,7 +151,7 @@ export function ShopBloc() {
           {d.benefits.map((b) => (
             <button key={b.id} className={p.benefits.includes(b.id) ? 'on' : ''} onClick={() => act(toggleBenefit, pid, b.id)} title={game.positioning[pid] === b.id ? 'Answers the #1 complaint about rivals' : ''}>
               {b.text}
-              {game.positioning[pid] === b.id && ' 🎯'}
+              {game.positioning[pid] === b.id && <> <Icon name="bullseye" /></>}
             </button>
           ))}
         </div>
@@ -182,16 +218,16 @@ export function ShopBloc() {
             {p.benefits.map((id) => (
               <li key={id}>
                 {d.benefits.find((b) => b.id === id)?.text}
-                {game.positioning[pid] === id && ' 🎯'}
+                {game.positioning[pid] === id && <> <Icon name="bullseye" /></>}
               </li>
             ))}
           </ul>
         </div>
       ),
       reviews: <div className="blk">{p.reviews.count ? `${'★'.repeat(Math.round(averageRating(game, pid)))} ${p.reviews.count} reviews` : 'No reviews yet'}</div>,
-      badges: <div className="blk">🛡 Secure checkout · 30-day money back</div>,
-      faq: <div className="blk">❓ FAQ</div>,
-      shipping: <div className="blk">🚚 Ships in 1–2 days{m.shipping === 2 ? ' · Free returns' : ''}</div>,
+      badges: <div className="blk"><Icon name="shield" /> Secure checkout · 30-day money back</div>,
+      faq: <div className="blk"><Icon name="infoBox" /> FAQ</div>,
+      shipping: <div className="blk"><Icon name="truck" /> Ships in 1–2 days{m.shipping === 2 ? ' · Free returns' : ''}</div>,
       checkout: <div className="blk" style={{ background: brand.theme ? theme.accent : '#f0a860', color: '#fff', fontWeight: 800, textAlign: 'center' }}>{m.checkout === 2 ? ' Pay · Buy now' : 'Add to cart'}</div>,
     };
     const active = MODULES.filter((x) => m[x.id] > 0).map((x) => x.id);
@@ -199,11 +235,11 @@ export function ShopBloc() {
     const order = [...saved, ...active.filter((x) => !saved.includes(x))];
     return (
       <div className="preview">
-        <div className="bar">🔒 {(brand.name || 'yourbrand').toLowerCase().replace(/\s+/g, '')}.shopbloc.com</div>
+        <div className="bar"><Icon name="lock" /> {(brand.name || 'yourbrand').toLowerCase().replace(/\s+/g, '')}.shopbloc.com</div>
         {order.map((id) => (
           <Fragment key={id}>{blocks[id]}</Fragment>
         ))}
-        {doubts.length > 0 && <div className="blk tiny" style={{ background: '#fff4d6' }}>🤔 Shopper doubts: {doubts.join(' ')}</div>}
+        {doubts.length > 0 && <div className="blk tiny" style={{ background: '#fff4d6' }}><Icon name="neutral" /> Shopper doubts: {doubts.join(' ')}</div>}
       </div>
     );
   }

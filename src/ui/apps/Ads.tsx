@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
 import { CREATIVES, CREATIVE_ORDER, CREATORS, CTA_FIT, HOOK_FIT, hooksFor } from '../../sim/data';
-import { adTrailing, audiences, breakEvenCPA, creativeMult, creativeUnlocked, dailyAdBudget, def, liveProducts, recentCPA, searchForecast, trailing } from '../../sim/economics';
+import { adTrailing, hasSkill, audiences, breakEvenCPA, creativeMult, creativeUnlocked, dailyAdBudget, def, liveProducts, recentCPA, searchForecast, trailing } from '../../sim/economics';
 import { adCap, completeAngleTest, hireCreator, onStore, searchUnlocked, setAdCell, setAdPolicy, setCreative, setSearch } from '../../sim/engine';
 import type { AdCell, AdDay, AdSource, CreativeType, Cta, GameState } from '../../sim/types';
 import { useGame } from '../../state/store';
@@ -8,6 +8,7 @@ import { AppTitle, NumberInput, Options, SubTabs } from '../bits';
 import { money, pct } from '../format';
 import { ProductImage, ProductShot, photosFor, photoUrl } from '../photos';
 import { ProductPicker, useProduct } from '../ProductPicker';
+import { Icon, withIcons } from '../icons';
 
 type View = 'overview' | 'campaigns' | 'studio' | 'creators' | 'manager';
 const WINDOW = 5;
@@ -32,6 +33,7 @@ const ratio = (a: number, b: number) => (b ? a / b : 0);
 export function Ads() {
   const game = useGame((s) => s.game);
   const act = useGame((s) => s.act);
+  const setModal = useGame((s) => s.setModal);
   const [view, setView] = useState<View>('overview');
   const [days, setDays] = useState(7);
   const pid = useProduct();
@@ -49,7 +51,7 @@ export function Ads() {
         sub={
           <>
             Daily budget set: <b>{money(dailyAdBudget(game))}</b>
-            {marketer ? <> · 📈 {marketer.name} manages bids daily (cap {money(adCap(game))}/day)</> : ' · You manage every bid yourself'}
+            {marketer ? <> · <Icon name="trendingUp" /> {marketer.name} manages bids daily (cap {money(adCap(game))}/day)</> : ' · You manage every bid yourself'}
           </>
         }
       />
@@ -67,7 +69,7 @@ export function Ads() {
       <label className="row tiny" style={{ gap: 6, margin: '6px 0 10px', cursor: 'pointer' }}>
         <input type="checkbox" checked={!!game.adPolicy.pauseOOS} onChange={(e) => act(setAdPolicy, { pauseOOS: e.target.checked })} />
         <span>
-          ⏸ Stop running ads when a product is out of stock <span className="muted">(they restart by themselves when stock arrives)</span>
+          <Icon name="pause" /> Stop running ads when a product is out of stock <span className="muted">(they restart by themselves when stock arrives)</span>
         </span>
         {oos.length > 0 && <span className={`pill ${game.adPolicy.pauseOOS ? 'good' : 'bad'}`}>{game.adPolicy.pauseOOS ? `${oos.length} paused now` : `${oos.length} out of stock, still spending`}</span>}
       </label>
@@ -137,7 +139,7 @@ export function Ads() {
                 <th>Product</th>
                 {SOURCES.map((s) => (
                   <th key={s.id} className="num">
-                    {s.label.split(' ')[0]} spend / CPA
+                    {withIcons(s.label.split(' ')[0])} spend / CPA
                   </th>
                 ))}
                 <th className="num">Total spend</th>
@@ -193,7 +195,7 @@ export function Ads() {
   function adRow(label: string, x: AdDay, bold = false) {
     return (
       <tr key={label} style={bold ? { fontWeight: 800 } : undefined}>
-        <td>{label}</td>
+        <td>{withIcons(label)}</td>
         <td className="num">{money(x.spend)}</td>
         <td className="num">{Math.round(x.impressions).toLocaleString()}</td>
         <td className="num">{Math.round(x.clicks).toLocaleString()}</td>
@@ -218,7 +220,7 @@ export function Ads() {
           Break-even for {def(game, pid).name}: <b>{money(be, true)}</b> per order. Keep ads that win orders for less. Edit the creatives in the Creative studio tab.
         </p>
         {!onStore(game, pid) && <p className="callout warn">This product isn’t live in your store yet. You can plan budgets now.</p>}
-        <h3>📣 Scrollr social ads</h3>
+        <h3><Icon name="radioSignal" /> Scrollr social ads</h3>
         <div className="adgrid" style={{ gridTemplateColumns: `110px repeat(${CREATIVE_ORDER.length}, 1fr)` }}>
           <div />
           {CREATIVE_ORDER.map((c) => (
@@ -237,7 +239,7 @@ export function Ads() {
             </Fragment>
           ))}
         </div>
-        <h3>🔎 Seekly search ads</h3>
+        <h3><Icon name="search" /> Seekly search ads</h3>
         {searchUnlocked(game) ? searchView(pid, be) : <p className="muted tiny">Unlocks after your first profitable Scrollr campaign. Search shoppers already want what you sell.</p>}
       </>
     );
@@ -258,7 +260,7 @@ export function Ads() {
     return (
       <div key={cell.key} className={`adcell ${locked ? 'locked' : ran ? v.cls : ''}`}>
         {locked ? (
-          <span className="tiny">🔒 {cell.creative === 'ugc' ? 'Needs a creator collab' : 'Needs 3 reviews'}</span>
+          <span className="tiny"><Icon name="lock" /> {cell.creative === 'ugc' ? 'Needs a creator collab' : 'Needs 3 reviews'}</span>
         ) : (
           <>
             <div className="row between">
@@ -325,9 +327,37 @@ export function Ads() {
         <p className="tiny muted">
           Each ad format uses one creative: a photo, a hook line and a button. Hooks land differently with each audience; your own photo shoot can beat stock photos when it’s good. Changing a creative restarts its learning.
         </p>
+        {researchCard(pid)}
         <AngleTest key={pid} pid={pid} />
         {CREATIVE_ORDER.map((c) => creativeEditor(pid, c))}
       </>
+    );
+  }
+
+  function researchCard(pid: string) {
+    const q = game.products[pid].creativeQuality;
+    const spy = hasSkill(game, 'adSpy');
+    return (
+      <div className="chat" style={{ marginBottom: 14 }}>
+        <div className="row between">
+          <h3 style={{ margin: 0 }}>
+            <Icon name="search" /> Competitor ad research
+          </h3>
+          <span className={`pill ${q !== undefined && q >= 0.75 ? 'good' : q === undefined ? 'warn' : ''}`}>{q === undefined ? 'Not researched' : `Creative quality ${Math.round(q * 100)}%`}</span>
+        </div>
+        <p className="tiny" style={{ margin: '6px 0' }}>
+          Study what’s working for rivals before you write your ads. Better research means every ad for this product clicks and converts better. {q === undefined ? 'Unresearched ads perform a bit below par.' : ''}
+        </p>
+        {spy ? (
+          <button className={q === undefined ? 'primary small' : 'small'} onClick={() => setModal({ kind: 'creative', productId: pid })}>
+            {q === undefined ? 'Research competitor ads (2h)' : 'Research again (2h)'}
+          </button>
+        ) : (
+          <span className="tiny muted">
+            <Icon name="lock" /> Needs the AdSpy Library subscription in SkillUp.
+          </span>
+        )}
+      </div>
     );
   }
 
@@ -346,7 +376,7 @@ export function Ads() {
           <Phone game={game} pid={pid} type={type} />
           <div style={{ flex: 1, minWidth: 240 }}>
             <h3 style={{ marginTop: 0 }}>
-              {type === 'video' ? d.videoHook : CREATIVES[type].name} {locked && <span className="pill">🔒 {type === 'ugc' ? 'needs a creator collab' : 'needs 3 reviews'}</span>}
+              {type === 'video' ? d.videoHook : CREATIVES[type].name} {locked && <span className="pill"><Icon name="lock" /> {type === 'ugc' ? 'needs a creator collab' : 'needs 3 reviews'}</span>}
             </h3>
             <p className="tiny muted" style={{ margin: '0 0 4px' }}>
               Photo
@@ -384,7 +414,7 @@ export function Ads() {
             <Options value={cr.cta} options={(Object.keys(CTA_FIT) as Cta[]).map((k) => ({ v: k, label: CTA_FIT[k].label }))} onChange={(v) => act(setCreative, pid, type, { cta: v })} />
             <div style={{ marginTop: 10 }}>
               {game.angleTested[pid] === undefined && !Object.values(p.ads).some((c) => c.creative === type && c.daysActive >= 5) ? (
-                <p className="tiny muted">🔒 Audience fit is unknown. Run the angle test above, or let this creative run for 5 days.</p>
+                <p className="tiny muted"><Icon name="lock" /> Audience fit is unknown. Run the angle test above, or let this creative run for 5 days.</p>
               ) : auds.map((a, i) => {
                 const m = creativeMult(game, pid, type, i);
                 const score = m.ctr * m.cvr;
@@ -397,7 +427,7 @@ export function Ads() {
               })}
               {creativeMult(game, pid, type, 0).notes.map((n) => (
                 <div key={n} className="tiny bad-text">
-                  ⚠️ {n}
+                  <Icon name="warning" /> {n}
                 </div>
               ))}
             </div>
@@ -476,7 +506,7 @@ export function Ads() {
                   <div className="tiny muted">
                     {tier?.name ?? 'Creator'} · {money(post.cost)} · day {post.day}
                   </div>
-                  {post.viral && <span className="pill good">🔥 went viral</span>}
+                  {post.viral && <span className="pill good"><Icon name="zap" /> went viral</span>}
                 </div>
               </div>
             );
@@ -550,7 +580,7 @@ function Phone({ game, pid, type }: { game: GameState; pid: string; type: Creati
     ) : list.length ? (
       <img src={photoUrl(list[cr.photo % list.length])} alt="" style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block' }} />
     ) : (
-      <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 70 }}>{d.emoji}</div>
+      <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 70 }}>{withIcons(d.emoji)}</div>
     );
   return (
     <div className="phone">
@@ -604,13 +634,13 @@ function AngleTest({ pid }: { pid: string }) {
   if (done !== null && answers.every((a) => a === null))
     return (
       <div className="callout good" style={{ marginBottom: 12 }}>
-        🎯 Angle test done ({done}/3). {done > 0 ? `Fresh-angle boost: +${done * 7}% clicks for 3 weeks after the test.` : 'No boost this time, but you can see how each creative fits now.'}
+        <Icon name="bullseye" /> Angle test done ({done}/3). {done > 0 ? `Fresh-angle boost: +${done * 7}% clicks for 3 weeks after the test.` : 'No boost this time, but you can see how each creative fits now.'}
       </div>
     );
   const score = questions.reduce((a, q, i) => a + (answers[i] === q.right ? 1 : 0), 0);
   return (
     <div className="chat" style={{ marginBottom: 14 }}>
-      <b>🧭 Find your angle</b>
+      <b><Icon name="gps" /> Find your angle</b>
       <p className="tiny muted" style={{ margin: '4px 0 8px' }}>Before spending a cent, read your audiences. Each right answer is worth +7% clicks on this product for 3 weeks.</p>
       {questions.map((q, i) => (
         <div key={i} style={{ marginBottom: 10 }}>

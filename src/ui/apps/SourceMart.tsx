@@ -26,6 +26,7 @@ import { AppTitle, Meter, NumberInput, Options, Pips, Toggle } from '../bits';
 import { ProductImage } from '../photos';
 import { money } from '../format';
 import { ProductPicker, useProduct } from '../ProductPicker';
+import { Icon, withIcons } from '../icons';
 
 export function SourceMart() {
   const game = useGame((s) => s.game);
@@ -50,7 +51,7 @@ export function SourceMart() {
               return (
                 <div key={id} className={`card ${neg?.supplierId === id && neg.productId === pid ? 'selected' : ''}`}>
                   <div className="row between">
-                    <span className="big-emoji">{sup.avatar}</span>
+                    <span className="big-emoji">{withIcons(sup.avatar)}</span>
                     <span className="tiny muted">{sup.city}</span>
                   </div>
                   <h4>{sup.company}</h4>
@@ -71,7 +72,7 @@ export function SourceMart() {
                     <span>Relationship</span>
                     <Meter value={game.relationship[id]} max={100} />
                   </div>
-                  {contract && <span className="pill good">🤝 Contract: −{Math.round(contract.discount * 100)}%, {contract.orderedUnits.toLocaleString()}/{contract.commitUnits.toLocaleString()} units</span>}
+                  {contract && <span className="pill good"><Icon name="briefcaseCheck" /> Contract: −{Math.round(contract.discount * 100)}%, {contract.orderedUnits.toLocaleString()}/{contract.commitUnits.toLocaleString()} units</span>}
                   {hasPaymentTerms(game, id) && !contract && <span className="pill good">{termsLabel(game, id)}</span>}
                   {game.stage <= 2 && !sample && (
                     <button onClick={() => act(orderSample, pid, id)} disabled={game.cash < SAMPLE_COST}>
@@ -81,10 +82,10 @@ export function SourceMart() {
                   {sample && !sample.arrived && <span className="pill">Sample arrives day {sample.arrivesDay}</span>}
                   {sample?.arrived && !sample.inspected && (
                     <button className="primary" onClick={() => setModal({ kind: 'unbox', productId: pid, supplierId: id })}>
-                      📦 Unbox sample
+                      <Icon name="archive" /> Unbox sample
                     </button>
                   )}
-                  {sample?.inspected && <p className="tiny">📝 Your notes: {sampleNote(game, pid, id)}</p>}
+                  {sample?.inspected && <p className="tiny"><Icon name="note" /> Your notes: {sampleNote(game, pid, id)}</p>}
                   {(!neg || neg.supplierId !== id || neg.productId !== pid) && (
                     <button className={sample?.inspected ? 'primary' : ''} onClick={() => act(startNegotiation, pid, id, quantityOptions(id)[0])}>
                       Negotiate an order
@@ -117,7 +118,7 @@ function StockTable() {
   const setProduct = useGame((s) => s.setProduct);
   return (
     <>
-      <h3 style={{ marginTop: 0 }}>📦 Stock & restock</h3>
+      <h3 style={{ marginTop: 0 }}><Icon name="archive" /> Stock & restock</h3>
       <table className="data">
         <thead>
           <tr>
@@ -206,7 +207,7 @@ function POTable() {
             return (
               <tr key={po.id}>
                 <td>
-                  {def(game, po.productId).emoji} {def(game, po.productId).name}
+                  {withIcons(def(game, po.productId).emoji)} {def(game, po.productId).name}
                   {po.auto && <span className="tiny muted"> · auto</span>}
                 </td>
                 <td>
@@ -220,10 +221,10 @@ function POTable() {
                 <td>
                   {po.status === 'transit' ? (
                     <span className={`pill ${po.delayDays ? 'warn' : ''}`}>
-                      {po.freight === 'air' ? '✈️' : '🚢'} day {po.arrivesDay}
+                      <Icon name={po.freight === 'air' ? 'speedFast' : 'ship'} /> day {po.arrivesDay}
                     </span>
                   ) : (
-                    <span className="pill">🏭 day {po.arrivesDay}</span>
+                    <span className="pill"><Icon name="buildings" /> day {po.arrivesDay}</span>
                   )}
                 </td>
                 <td style={{ width: 100 }}>
@@ -262,7 +263,7 @@ function Negotiation() {
     <div className="chat" style={{ marginTop: 16 }}>
       <div className="row between">
         <h3 style={{ margin: 0 }}>
-          {sup.avatar} {sup.contact} · {def(game, n.productId).name}
+          {withIcons(sup.avatar)} {sup.contact} · {def(game, n.productId).name}
         </h3>
         <button className="small ghost" onClick={() => act(cancelNegotiation)}>
           Close
@@ -299,8 +300,8 @@ function Negotiation() {
           <Options
             value={freight}
             options={[
-              { v: 'air', label: `✈️ Air: +${money(freightPerUnit(game, n.productId, 'air'), true)}/unit, ${AIR_DAYS} days` },
-              { v: 'sea', label: `🚢 Sea: +${money(freightPerUnit(game, n.productId, 'sea'), true)}/unit, ${SEA_DAYS} days` },
+              { v: 'air', label: <><Icon name="speedFast" /> Air: +{money(freightPerUnit(game, n.productId, 'air'), true)}/unit, {AIR_DAYS} days</> },
+              { v: 'sea', label: <><Icon name="ship" /> Sea: +{money(freightPerUnit(game, n.productId, 'sea'), true)}/unit, {SEA_DAYS} days</> },
             ]}
             onChange={setFreight}
           />
@@ -343,7 +344,7 @@ function Negotiation() {
           {isReorder && !game.milestones.first_profitable_reorder && (
             <p className={`callout ${winsAfter >= STARTING_CASH && n.qty >= WIN_REORDER_QTY ? 'good' : ''}`}>
               After paying: cash + payouts = <b>{money(winsAfter)}</b>.{' '}
-              {winsAfter >= STARTING_CASH && n.qty >= WIN_REORDER_QTY ? '🎉 This counts as your first profitable reorder!' : `You need ${money(STARTING_CASH)}+ and ${WIN_REORDER_QTY}+ units for a profitable reorder.`}
+              {winsAfter >= STARTING_CASH && n.qty >= WIN_REORDER_QTY ? <><Icon name="trophy" /> This counts as your first profitable reorder!</> : `You need ${money(STARTING_CASH)}+ and ${WIN_REORDER_QTY}+ units for a profitable reorder.`}
             </p>
           )}
           <div className="row" style={{ marginTop: 10 }}>
@@ -369,8 +370,8 @@ function ReorderRule({ pid }: { pid: string }) {
   return (
     <div className="chat" style={{ marginTop: 16 }}>
       <div className="row between">
-        <h3 style={{ margin: 0 }}>🔁 Replenishment for {def(game, pid).name}</h3>
-        <span className={`pill ${buyer ? 'good' : ''}`}>{buyer ? '🤖 Buyer places orders automatically' : 'Alerts only (hire a buyer to automate)'}</span>
+        <h3 style={{ margin: 0 }}><Icon name="repeat" /> Replenishment for {def(game, pid).name}</h3>
+        <span className={`pill ${buyer ? 'good' : ''}`}>{buyer ? <><Icon name="android" /> Buyer places orders automatically</> : 'Alerts only (hire a buyer to automate)'}</span>
       </div>
       <p className="tiny muted">
         Selling ~{daily.toFixed(1)} units/day. Stock + incoming covers {cover === null ? '—' : `${Math.floor(cover)} days`}. When cover drops below lead time + half your target, you get an alert{buyer ? ' and your buyer reorders' : ''}.
@@ -391,7 +392,7 @@ function ReorderRule({ pid }: { pid: string }) {
           Qty
           <input type="number" style={{ width: 90 }} value={r.qty} step={100} min={100} onChange={(e) => act(setReorderRule, pid, { qty: Math.max(100, +e.target.value) })} />
         </label>
-        <Options value={r.freight} options={[{ v: 'sea', label: '🚢 Sea' }, { v: 'air', label: '✈️ Air' }]} onChange={(v) => act(setReorderRule, pid, { freight: v })} />
+        <Options value={r.freight} options={[{ v: 'sea', label: <><Icon name="ship" /> Sea</> }, { v: 'air', label: <><Icon name="speedFast" /> Air</> }]} onChange={(v) => act(setReorderRule, pid, { freight: v })} />
         <label className="row tiny" style={{ gap: 6 }}>
           Target cover
           <input type="number" style={{ width: 60 }} value={r.coverDays} min={7} max={120} onChange={(e) => act(setReorderRule, pid, { coverDays: +e.target.value })} /> days
@@ -406,7 +407,7 @@ function Contracts() {
   const act = useGame((s) => s.act);
   return (
     <>
-      <h3>🤝 Manufacturing agreements</h3>
+      <h3><Icon name="briefcaseCheck" /> Manufacturing agreements</h3>
       <p className="tiny muted">Commit to a year of volume for lower prices, 30/70 payment terms and 2 days faster production. Falling short costs $0.40 per missing unit.</p>
       <table className="data">
         <tbody>
@@ -417,7 +418,7 @@ function Contracts() {
             return (
               <tr key={id}>
                 <td>
-                  {SUPPLIERS[id].avatar} {SUPPLIERS[id].company}
+                  {withIcons(SUPPLIERS[id].avatar)} {SUPPLIERS[id].company}
                 </td>
                 <td className="tiny">
                   {c

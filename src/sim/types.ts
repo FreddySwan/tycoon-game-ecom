@@ -398,6 +398,10 @@ export interface ProductState {
   /** Recent daily orders, newest last (14 days). */
   daily: number[];
   creatorBoost: number[];
+  /** How this product's market has drifted since you started selling it (1 = launch level). */
+  market?: { ad: number; cost: number; /** Share of demand left as competitors pile in (1 = all of it). */ share?: number };
+  /** 0..1 from competitor creative research: better-researched ads click and convert better. */
+  creativeQuality?: number;
 }
 
 export type Vibe = 'playful' | 'clean' | 'cozy' | 'bold' | 'minimal';
@@ -417,7 +421,7 @@ export interface Brand {
   name: string;
   color: string;
   createdDay: number;
-  store: { launched: boolean; launchedDay: number | null; modules: Record<ModuleId, number>; order?: ModuleId[] };
+  store: { launched: boolean; launchedDay: number | null; modules: Record<ModuleId, number>; order?: ModuleId[]; /** 0..1 from the store builder; null until built. */ quality?: number | null; /** Day the build finishes and the store can launch. */ readyDay?: number };
   packaging: Packaging;
   thankYouCard: boolean;
   freeShipping: boolean;
@@ -671,6 +675,84 @@ export interface GameState {
   discountFatigue: number;
   flags: Record<string, boolean>;
   counters: Record<string, number>;
+  /** Courses, software and gear bought in SkillUp. */
+  skills: Partial<Record<SkillId, SkillState>>;
+  difficulty: Difficulty;
+  story: StoryState;
   seq: number;
   lastDayOrders: number;
+}
+
+// ───────────────────────────── skills, difficulty, story ─────────────────────────────
+
+export type SkillId =
+  | 'adsBasics'
+  | 'adsAdvanced'
+  | 'searchAds'
+  | 'copywriting'
+  | 'photography'
+  | 'storeCourse'
+  | 'researchTool'
+  | 'adSpy'
+  | 'tapeGun'
+  | 'scale'
+  | 'labelPrinter'
+  | 'packBench';
+
+export interface SkillDef {
+  id: SkillId;
+  name: string;
+  kind: 'course' | 'software' | 'gear';
+  /** Emoji key, drawn as a pixel icon by the UI. */
+  icon: string;
+  cost: number;
+  /** Software is billed monthly. */
+  monthly?: number;
+  /** Founder hours to finish a course. */
+  hours?: number;
+  requires?: SkillId[];
+  desc: string;
+  effect: string;
+}
+
+export interface SkillState {
+  /** Hours studied (courses). */
+  progress: number;
+  /** Software subscription running. */
+  active?: boolean;
+}
+
+export type Difficulty = 'relaxed' | 'normal' | 'hard';
+
+export type CharacterId = 'mom' | 'dad' | 'sam' | 'maya';
+
+export interface StoryMessage {
+  id: number;
+  day: number;
+  from: CharacterId;
+  text: string;
+  choices?: { id: string; label: string; hint?: string }[];
+  /** Choice made (or 'expired'). */
+  answer?: string;
+  /** Unanswered choices fall back to the last option on this day. */
+  expires?: number;
+  read?: boolean;
+  /** Which beat produced it, so choices can be resolved. */
+  beat: string;
+}
+
+export interface StoryState {
+  /** 0..100. Long days drain it; rest and friends restore it. Low energy means fewer founder hours. */
+  energy: number;
+  /** What the founder still owes the people who lent the starting $4,000. */
+  debt: Record<'mom' | 'sam' | 'maya', number>;
+  /** 0..100 per person. */
+  bond: Record<CharacterId, number>;
+  messages: StoryMessage[];
+  /** Beats already played. */
+  beats: Record<string, number>;
+  /** Day friends are over (shown in the apartment). */
+  guestsDay?: number;
+  /** Day friends come to help (extra hours). */
+  helpDay?: number;
 }

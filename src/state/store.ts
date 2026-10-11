@@ -5,6 +5,7 @@ import { sfx } from './sound';
 
 export type TabId =
   | 'products'
+  | 'skills'
   | 'source'
   | 'store'
   | 'offer'
@@ -24,6 +25,9 @@ export type Modal =
   | { kind: 'scan'; productId: string }
   | { kind: 'dig'; productId: string }
   | { kind: 'quiz'; productId: string }
+  | { kind: 'build'; brandId: number }
+  | { kind: 'creative'; productId: string }
+  | { kind: 'phone' }
   | { kind: 'pack' }
   | { kind: 'milestone'; text: string }
   | { kind: 'report' }

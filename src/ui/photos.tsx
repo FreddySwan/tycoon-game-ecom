@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { def } from '../sim/economics';
 import type { GameState, PhotoChoice } from '../sim/types';
 import credits from './photo-credits.json';
+import { Icon, withIcons } from './icons';
 
 export interface Photo {
   src: string;
@@ -35,7 +36,7 @@ export function ProductImage({ game, pid, index = 0, size = 64, round = 10, styl
   // Slot 0 is a clean product shot on white: show it whole. Other slots are lifestyle photos: fill the frame.
   const main = index % Math.max(1, list.length) === 0;
   const box: CSSProperties = { width: size, height: size, borderRadius: round, objectFit: main ? 'contain' : 'cover', flex: 'none', background: main ? '#fff' : '#f3e3cf', display: 'block', ...style };
-  if (!p) return <div style={{ ...box, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: typeof size === 'number' ? size * 0.5 : 28 }}>{def(game, pid).emoji}</div>;
+  if (!p) return <div style={{ ...box, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: typeof size === 'number' ? size * 0.5 : 28 }}>{withIcons(def(game, pid).emoji)}</div>;
   return <img src={photoUrl(p)} alt={def(game, pid).name} style={box} loading="lazy" />;
 }
 
@@ -73,10 +74,10 @@ export function ProductShot({ game, pid, choice, height = 160, children }: { gam
           overflow: 'hidden',
         }}
       >
-        {p ? <img src={photoUrl(p)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /> : <span style={{ fontSize: 60 }}>{def(game, pid).emoji}</span>}
+        {p ? <img src={photoUrl(p)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /> : <span style={{ fontSize: 60 }}>{withIcons(def(game, pid).emoji)}</span>}
       </div>
-      {c.prop === 'cat' && <span style={{ position: 'absolute', right: '8%', bottom: '6%', fontSize: height * 0.22 }}>🐈</span>}
-      {c.prop === 'accessory' && <span style={{ position: 'absolute', left: '8%', bottom: '8%', fontSize: height * 0.16 }}>✨</span>}
+      {c.prop === 'cat' && <span style={{ position: 'absolute', right: '8%', bottom: '6%', fontSize: height * 0.22 }}><Icon name="heart" /></span>}
+      {c.prop === 'accessory' && <span style={{ position: 'absolute', left: '8%', bottom: '8%', fontSize: height * 0.16 }}><Icon name="zap" /></span>}
       {c.light === 'lamp' && <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at 80% 15%, rgba(255,200,120,0.35), transparent 60%)' }} />}
       {c.light === 'window' && <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(110deg, rgba(255,255,255,0.35), transparent 45%)' }} />}
       {children}

@@ -7,6 +7,7 @@ import { useGame } from '../../state/store';
 import { AppTitle, Meter, Options, Toggle } from '../bits';
 import { money, pct } from '../format';
 import { ProductImage } from '../photos';
+import { Icon, withIcons } from '../icons';
 
 const TILE: Record<TileId, { icon: string; label: string; color: string; what: string }> = {
   rack: { icon: '🗄️', label: 'RACK', color: '#f5d2b3', what: `Storage rack: holds ${RACK_STORAGE.toLocaleString()} units.` },
@@ -43,7 +44,7 @@ export function Ops() {
         <Kpi k="Orders / day" v={p7.total.toFixed(1)} s={`7-day avg · 30-day ${p30.total.toFixed(1)}`} />
         <Kpi k="You ship / day" v={p7.own.toFixed(1)} s={p7.total - p7.own > 0.5 ? `${(p7.total - p7.own).toFixed(1)} shipped by marketplaces` : 'all orders'} />
         <Kpi k="Packing capacity" v={cap.thirdParty ? '∞ (3PL)' : Math.round(cap.total).toLocaleString()} s={cap.thirdParty ? 'outsourced' : [cap.founder && `you ${cap.founder}`, cap.team && `team ${cap.team}`, cap.robots && `robots ${cap.robots}`].filter(Boolean).join(' · ') || 'none'} />
-        <Kpi k="Utilization" v={cap.thirdParty ? '—' : pct(util, 0)} s={util > 1 ? '⚠️ over capacity' : util > 0.85 ? 'running hot' : 'healthy'} warn={util > 1} />
+        <Kpi k="Utilization" v={cap.thirdParty ? '—' : pct(util, 0)} s={util > 1 ? 'over capacity!' : util > 0.85 ? 'running hot' : 'healthy'} warn={util > 1} />
         <Kpi k="Waiting to ship" v={Math.round(backlog).toLocaleString()} s={oldest >= 2 ? `oldest ${oldest} days` : 'all fresh'} warn={oldest >= 3} />
         <Kpi k="Storage" v={storage === Infinity ? '3PL' : pct(used / storage, 0)} s={`${Math.round(used).toLocaleString()} of ${storage === Infinity ? '∞' : storage.toLocaleString()}`} warn={used > storage} />
       </div>
@@ -62,7 +63,7 @@ export function Ops() {
           <b>Pack by hand.</b> The first {BATCH_UNLOCK_AFTER} orders are packed one at a time ({game.handPacked}/{BATCH_UNLOCK_AFTER}). Then batch packing uses your leftover founder hours every evening.
           <div className="row" style={{ marginTop: 8 }}>
             <button className="primary" disabled={!backlog} onClick={() => setModal({ kind: 'pack' })}>
-              📦 Pack the next order
+              <Icon name="archive" /> Pack the next order
             </button>
           </div>
         </div>
@@ -73,7 +74,7 @@ export function Ops() {
       <div className="row" style={{ marginTop: 6 }}>
         {game.stage <= 2 && (
           <button className="small" onClick={() => act(callFriend)} disabled={game.extraHours > 0}>
-            📞 Call a friend (+{FRIEND_HELP.hours}h today, {money(FRIEND_HELP.cost)})
+            <Icon name="deskphone" /> Call a friend (+{FRIEND_HELP.hours}h today, {money(FRIEND_HELP.cost)})
           </button>
         )}
       </div>
@@ -81,7 +82,7 @@ export function Ops() {
       {game.stage >= 2 && (
         <div className="chat" style={{ marginTop: 12 }}>
           <div className="row between">
-            <b>🚚 Fulfillment: in-house vs 3PL</b>
+            <b><Icon name="truck" /> Fulfillment: in-house vs 3PL</b>
             <Toggle on={game.thirdParty} onChange={(v) => act(setThirdParty, v)} label="Use a 3PL" />
           </div>
           <table className="data" style={{ marginTop: 6 }}>
@@ -106,7 +107,7 @@ export function Ops() {
 
       {game.stage >= 3 && (
         <div className="chat" style={{ marginTop: 12 }}>
-          <b>🦺 Warehouse lead autopilot</b>
+          <b><Icon name="humanUp" /> Warehouse lead autopilot</b>
           <p className="tiny muted" style={{ margin: '4px 0 8px' }}>
             {lead ? `${lead.name} reviews the floor every 3 days.` : 'Promote or hire a warehouse lead (Team app) to automate the floor.'}
           </p>
@@ -116,7 +117,7 @@ export function Ops() {
           </div>
           {game.notices.filter((n) => n.text.startsWith('🦺')).slice(-3).reverse().map((n) => (
             <div key={n.id} className="tiny muted">
-              Day {n.day}: {n.text.replace('🦺 ', '')}
+              Day {n.day}: {withIcons(n.text.replace('🦺 ', ''))}
             </div>
           ))}
         </div>
@@ -153,7 +154,7 @@ export function Ops() {
           <div className="row">
             {(Object.keys(AUTOMATION) as (keyof typeof AUTOMATION)[]).map((k) => (
               <button key={k} disabled={game.automation[k] || game.stage < AUTOMATION[k].stage} onClick={() => act(buyAutomation, k)}>
-                {game.automation[k] ? '✅ ' : ''}
+                {game.automation[k] ? <><Icon name="check" color="#1f9d55" /> </> : ''}
                 {AUTOMATION[k].name}
                 <small style={{ display: 'block', fontWeight: 600, opacity: 0.7 }}>
                   {money(AUTOMATION[k].cost)} · {AUTOMATION[k].desc}
@@ -216,7 +217,7 @@ export function Ops() {
             {(Object.keys(c30) as ChannelId[]).map((ch) => (
               <tr key={ch}>
                 <td>
-                  {CHANNELS[ch].emoji} {CHANNELS[ch].name}
+                  {withIcons(CHANNELS[ch].emoji)} {CHANNELS[ch].name}
                 </td>
                 <td className="num">{((c7[ch]?.orders ?? 0) / d7).toFixed(1)}</td>
                 <td className="num">{((c30[ch]?.orders ?? 0) / d30).toFixed(1)}</td>
@@ -256,14 +257,14 @@ function Layout() {
   const count = (t: TileId) => cells.filter((c) => c === t).length;
   return (
     <>
-      <h3>🏗️ Warehouse layout</h3>
+      <h3><Icon name="buildings" /> Warehouse layout</h3>
       <div className="legend">
         {(Object.keys(TILE) as TileId[])
           .filter((t) => t !== 'robot' || game.stage >= 5)
           .map((t) => (
             <div key={t}>
               <span className="sw" style={{ background: TILE[t].color }}>
-                {TILE[t].icon}
+                {withIcons(TILE[t].icon)}
               </span>
               <span>
                 <b>
@@ -277,7 +278,7 @@ function Layout() {
           ))}
         <div>
           <span className="sw" style={{ background: '#ffe9a8' }}>
-            🚛
+            <Icon name="truck" />
           </span>
           <span>
             <b>DOCK</b>
@@ -289,7 +290,7 @@ function Layout() {
       <p className="tiny muted">
         A station’s number is its speed: next to a rack and close to the dock is best, a conveyor beside it adds 25%. {cap.usedStations}/{cap.stations} stations staffed. Removing a tile refunds half its cost.
       </p>
-      <Options value={tool} options={tools.map((t) => ({ v: t, label: t === 'erase' ? '🧽 Remove' : `${TILE[t].icon} Place ${TILE[t].label.toLowerCase()}` }))} onChange={setTool} />
+      <Options value={tool} options={tools.map((t) => ({ v: t, label: t === 'erase' ? <><Icon name="close" /> Remove</> : <>{withIcons(TILE[t].icon)} Place {TILE[t].label.toLowerCase()}</> }))} onChange={setTool} />
       <div className="layout" style={{ gridTemplateColumns: `repeat(${w}, 1fr)`, marginTop: 8 }}>
         {cells.map((c, i) => {
           const x = i % w;
@@ -303,7 +304,7 @@ function Layout() {
               onClick={() => i !== dock && act(placeTile, x, y, tool === 'erase' ? null : tool)}
               style={c === 'station' ? { background: `hsl(${Math.round((eff - 0.6) * 200)}, 60%, 85%)` } : c ? { background: TILE[c].color } : undefined}
             >
-              {i === dock ? '🚛' : c ? TILE[c].icon : ''}
+              {i === dock ? <Icon name="truck" /> : c ? withIcons(TILE[c].icon) : ''}
               {c && <span className="lbl">{c === 'station' ? `${Math.round(eff * 100)}%` : TILE[c].label}</span>}
             </button>
           );
@@ -320,7 +321,7 @@ function Support() {
   const capacity = supportCapacity(game);
   return (
     <>
-      <h3>🎧 Customer support policy</h3>
+      <h3><Icon name="headset" /> Customer support policy</h3>
       {game.team.support.count === 0 ? (
         <p className="tiny muted">You answer every message yourself (see Inbox). Hire a support agent in Team to hand this off.</p>
       ) : (

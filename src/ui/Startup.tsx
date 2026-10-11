@@ -5,6 +5,7 @@ import type { Brand, CategoryId, ModuleId, PackDesign, Vibe } from '../sim/types
 import { useGame } from '../state/store';
 import { Meter, Options } from './bits';
 import { money } from './format';
+import { Icon, withIcons } from './icons';
 
 function categoryOf(brand: Brand): CategoryId {
   const game = useGame.getState().game;
@@ -13,7 +14,7 @@ function categoryOf(brand: Brand): CategoryId {
 }
 
 const REACTIONS: [number, string][] = [
-  [0.85, '“OMG the unboxing! Posting this right now.” 📸'],
+  [0.85, '“OMG the unboxing! Posting this right now.”'],
   [0.6, '“Cute box, feels like a real brand.”'],
   [0.35, '“It’s… a box. Product looks fine though.”'],
   [0, '“Plain brown box. Did I order from a warehouse?”'],
@@ -30,7 +31,7 @@ export function PackagingDesigner({ brand }: { brand: Brand }) {
   const reaction = REACTIONS.find(([min]) => score >= min)![1];
   return (
     <div className="chat" style={{ marginTop: 12 }}>
-      <b>🎁 Design your box</b>
+      <b><Icon name="gift" /> Design your box</b>
       <p className="tiny muted" style={{ margin: '4px 0 10px' }}>
         Unboxing is your first real touch with a customer. A box that fits the vibe of your category lifts reviews, repeat buying and trust.
       </p>
@@ -40,7 +41,7 @@ export function PackagingDesigner({ brand }: { brand: Brand }) {
           {design.print === 'logo' && <span className="logo" style={{ color: v.accent, fontFamily: v.font }}>{brand.name || 'Your brand'}</span>}
           {design.print === 'pattern' && <span className="pattern" style={{ color: v.accent }}>✦ ✦ ✦ ✦<br />✦ ✦ ✦ ✦</span>}
           {design.insert === 'tissue' && <span className="tissue" />}
-          {design.insert === 'sticker' && <span className="sticker" style={{ background: v.accent }}>♥</span>}
+          {design.insert === 'sticker' && <span className="sticker" style={{ background: v.accent }}><Icon name="heart" /></span>}
         </div>
         <div style={{ flex: 1, minWidth: 220, display: 'grid', gap: 8 }}>
           <div>
@@ -65,7 +66,7 @@ export function PackagingDesigner({ brand }: { brand: Brand }) {
           </div>
           <Meter value={score} />
           <div className="tiny">Test customer: {reaction}</div>
-          {score < 0.6 && design.color !== CATEGORY_VIBE[cat] && <div className="tiny muted">💡 Think about who buys {cat} products. What style would they expect?</div>}
+          {score < 0.6 && design.color !== CATEGORY_VIBE[cat] && <div className="tiny muted"><Icon name="lightbulb" /> Think about who buys {cat} products. What style would they expect?</div>}
         </div>
       </div>
     </div>
@@ -96,7 +97,7 @@ export function LayoutBuilder({ brand }: { brand: Brand }) {
   if (idx('faq') >= 0 && idx('faq') < idx('description')) issues.push('An FAQ up top feels like you’re hiding something.');
   return (
     <div className="chat" style={{ marginTop: 12 }}>
-      <b>🧱 Page layout & theme</b>
+      <b><Icon name="layout" /> Page layout & theme</b>
       <p className="tiny muted" style={{ margin: '4px 0 10px' }}>Order your sections top to bottom like a shopper scrolls: hook them, explain, prove it, reassure, then ask for the sale.</p>
       <div className="row" style={{ alignItems: 'flex-start', gap: 16 }}>
         <ol className="layout-list">
@@ -105,7 +106,7 @@ export function LayoutBuilder({ brand }: { brand: Brand }) {
             return (
               <li key={m}>
                 <span>
-                  {meta.icon} {meta.name}
+                  {withIcons(meta.icon)} {meta.name}
                 </span>
                 <span>
                   <button className="small ghost" disabled={i === 0} onClick={() => move(i, -1)}>
@@ -127,16 +128,16 @@ export function LayoutBuilder({ brand }: { brand: Brand }) {
           <Meter value={score} />
           {issues.map((x) => (
             <div key={x} className="tiny bad-text">
-              ⚠️ {x}
+              <Icon name="warning" /> {x}
             </div>
           ))}
-          {!issues.length && score > 0.9 && <div className="tiny good-text">✅ Reads like a great product page.</div>}
+          {!issues.length && score > 0.9 && <div className="tiny good-text"><Icon name="check" /> Reads like a great product page.</div>}
           <div className="tiny muted">Theme</div>
           <Options value={theme} options={(Object.keys(VIBES) as Vibe[]).map((k) => ({ v: k, label: VIBES[k].name }))} onChange={(t) => act(setStoreLayout, brand.id, order, t)} />
           <div className="theme-swatch" style={{ background: VIBES[theme].color, color: VIBES[theme].accent, fontFamily: VIBES[theme].font }}>
             {brand.name || 'Your brand'} · Aa
           </div>
-          <div className="tiny muted">{theme === CATEGORY_VIBE[cat] ? '✅ Feels right for this category.' : 'Does this look feel right for your customers?'}</div>
+          <div className="tiny muted">{theme === CATEGORY_VIBE[cat] ? <><Icon name="check" color="#1f9d55" /> Feels right for this category.</> : 'Does this look feel right for your customers?'}</div>
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { BATCH_UNLOCK_AFTER, STAGES, STARTING_CASH, WIN_REORDER_QTY } from '../sim/data';
-import { breakEvenCPA, fulfillmentCapacity, liveProducts, stockDays } from '../sim/economics';
+import { breakEvenCPA, fulfillmentCapacity, hasSkill, liveProducts, stockDays } from '../sim/economics';
 import { launchProblems, onStore } from '../sim/engine';
 import { stageChecks } from '../sim/progress';
 import type { GameState, StageId } from '../sim/types';
@@ -17,6 +17,7 @@ export function currentGoal(s: GameState): Goal {
   const pid = ids[0];
   if (!pid) {
     const researched = Object.keys(s.research).length;
+    if (s.revealed.length >= 1 && researched < 2 && !hasSkill(s, 'researchTool')) return { title: 'Get a research tool', hint: 'You can’t judge a product blind. Subscribe to TrendHound Pro in SkillUp ($39/month) to investigate your leads.', tab: 'skills' };
     if (s.revealed.length < 3 && researched < 2) return { title: 'Dig for products', hint: 'Hit ⛏️ Dig in the Trend Scanner. Each dig turns up one random product lead (1 founder hour).', tab: 'products' };
     if (researched < 2) return { title: 'Investigate your leads', hint: 'Read the market data on a few leads and call what it means (1 founder hour each).', tab: 'products' };
     if (s.shortlist.length < 2) return { title: 'Build a shortlist', hint: 'Deep-dive the promising ones and ☆ shortlist 2–5 to compare side by side.', tab: 'products' };
@@ -34,6 +35,8 @@ export function currentGoal(s: GameState): Goal {
   }
   if (!s.shipped && !s.products[pid].inventory.onHand) return { title: 'Waiting for stock', hint: 'Set your price in Offer and plan ads while the boxes ship.', tab: 'offer' };
   if (s.backlog.length && !s.batchPacking && s.stage === 1) return { title: 'Pack your orders', hint: `Pack the first orders by hand (${s.handPacked}/${BATCH_UNLOCK_AFTER}) to unlock batch packing.`, tab: 'ops' };
+  if (s.stage === 1 && !hasSkill(s, 'adsBasics') && !ids.some((id) => Object.values(s.products[id].ads).some((c) => c.totals.spend > 0)))
+    return { title: 'Learn to run ads', hint: s.skills.adsBasics ? 'Keep studying the Ads Launchpad course in SkillUp. Then you can open your Scrollr ad account.' : 'Enroll in the Ads Launchpad course in SkillUp ($149, 4h of study) to open a Scrollr ad account.', tab: 'skills' };
   if (s.stage === 1 && !ids.some((id) => Object.values(s.products[id].ads).some((c) => c.totals.spend > 0))) return { title: 'Launch a test campaign', hint: 'In the Ads app, switch on a few audience × creative cells at $10/day.', tab: 'ads' };
   if (s.stage === 1 && !s.milestones.first_profitable_campaign) return { title: 'Find a winning ad', hint: `Keep ads whose cost per order is under ${money(breakEvenCPA(s, pid), true)}. Pause the rest.`, tab: 'ads' };
   if (s.stage === 1 && !s.milestones.first_profitable_reorder) {

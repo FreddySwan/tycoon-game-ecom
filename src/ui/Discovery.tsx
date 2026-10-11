@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { dayOfYear } from '../sim/calendar';
 import { CATEGORIES, MONTH, MONTH_NAMES, PACKAGING_COST } from '../sim/data';
-import { def, roughKeep } from '../sim/economics';
+import { def, hasSkill, roughKeep } from '../sim/economics';
 import { completeInvestigation, digHours, digPool, research } from '../sim/engine';
 import type { GameState, ProductDef } from '../sim/types';
 import { useGame } from '../state/store';
 import { money } from './format';
 import { LineChart } from './LineChart';
 import { ProductImage } from './photos';
+import { Icon, withIcons } from './icons';
 
 const DIG_LINES = ['Scrolling Bazaarly bestseller lists…', 'Reading Reddit threads about annoying problems…', 'Watching what’s trending on Scrollr…', 'Checking Seekly search trends…'];
 
@@ -42,9 +43,9 @@ export function DigReveal({ productId }: { productId: string }) {
         {!found ? (
           <div className="dig">
             <div className="dig-emojis">
-              {['🔎', '📈', '🛒', '💬'].map((e, i) => (
+              {(['search', 'trendingUp', 'cart', 'chat'] as const).map((e, i) => (
                 <span key={e} style={{ animationDelay: `${i * 0.12}s` }}>
-                  {e}
+                  <Icon name={e} />
                 </span>
               ))}
             </div>
@@ -59,17 +60,29 @@ export function DigReveal({ productId }: { productId: string }) {
             <ProductImage game={game} pid={productId} size={180} round={14} style={{ margin: '10px auto' }} />
             <h2 style={{ margin: '4px 0' }}>{d.name}</h2>
             <div className="tiny muted">
-              {cat.emoji} {cat.name} · sells for ~{money(d.refPrice)}
+              {withIcons(cat.emoji)} {cat.name} · sells for ~{money(d.refPrice)}
             </div>
             <p>{d.tagline}</p>
             <p className="tiny muted">Is it any good? You don’t know yet. Investigate the market before you bet your savings on it.</p>
             <div style={{ display: 'grid', gap: 6 }}>
-              <button className="primary" onClick={() => setModal({ kind: 'quiz', productId })}>
-                🔎 Investigate the market (1h)
-              </button>
+              {hasSkill(game, 'researchTool') ? (
+                <button className="primary" onClick={() => setModal({ kind: 'quiz', productId })}>
+                  <Icon name="search" /> Investigate the market (1h)
+                </button>
+              ) : (
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setModal(null);
+                    useGame.getState().setTab('skills');
+                  }}
+                >
+                  <Icon name="lock" /> Investigating needs a research tool: open SkillUp
+                </button>
+              )}
               <div className="row" style={{ justifyContent: 'center', gap: 6 }}>
                 <button className="small" onClick={again} disabled={!digPool(game).length}>
-                  ⛏️ Dig again ({digHours(game)}h)
+                  <Icon name="lightbulbOn" /> Dig again ({digHours(game)}h)
                 </button>
                 <button className="small ghost" onClick={() => setModal(null)}>
                   Back to the board
@@ -312,27 +325,27 @@ export function Investigate({ productId }: { productId: string }) {
         {step === 3 && (
           <div>
             <div className="center" style={{ textAlign: 'center' }}>
-              <div className="huge">{score === 3 ? '🎯' : score === 2 ? '👍' : '🧐'}</div>
+              <div className="huge"><Icon name={score === 3 ? 'bullseye' : score === 2 ? 'happy' : 'neutral'} /></div>
               <h2 style={{ marginTop: 0 }}>Market read: {score}/3</h2>
               {score === 3 && <p className="callout good">Sharp read. That investigation was quick: the founder hour is on the house.</p>}
             </div>
             <ul>
               <li>
-                {right[0] ? '✅' : '❌'} <b>{d.name}</b> {TREND_OPTS.find((o) => o.v === d.trend.kind)?.why}
+                {right[0] ? <Icon name="check" color="#1f9d55" /> : <Icon name="close" color="#d64545" />} <b>{d.name}</b> {TREND_OPTS.find((o) => o.v === d.trend.kind)?.why}
               </li>
               <li>
-                {right[1] ? '✅' : '❌'} {q.sellers} sellers, top listings with up to {Math.max(...q.rivals.map((r) => r.reviews)).toLocaleString()} reviews: <b>{CROWD_OPTS.find((o) => o.v === crowdOf(q.comp))?.label.split(':')[0].toLowerCase()}</b>.{' '}
+                {right[1] ? <Icon name="check" color="#1f9d55" /> : <Icon name="close" color="#d64545" />} {q.sellers} sellers, top listings with up to {Math.max(...q.rivals.map((r) => r.reviews)).toLocaleString()} reviews: <b>{CROWD_OPTS.find((o) => o.v === crowdOf(q.comp))?.label.split(':')[0].toLowerCase()}</b>.{' '}
                 {q.comp >= 4 ? 'You’ll need a sharper angle and more ad money to stand out.' : q.comp <= 2 ? 'Easy to get noticed, but check that people actually want it.' : 'Beat them on photos, reviews and a clear benefit.'}
               </li>
               <li>
-                {right[2] ? '✅' : '❌'} You keep about <b>{money(q.est.keep, true)}</b>: {money(d.refPrice, true)} − {money(q.est.landed, true)} landed − {money(d.shipToCustomer, true)} shipping − {money(PACKAGING_COST.basic, true)} box − {money(q.est.fees, true)} fees.{' '}
+                {right[2] ? <Icon name="check" color="#1f9d55" /> : <Icon name="close" color="#d64545" />} You keep about <b>{money(q.est.keep, true)}</b>: {money(d.refPrice, true)} − {money(q.est.landed, true)} landed − {money(d.shipToCustomer, true)} shipping − {money(PACKAGING_COST.basic, true)} box − {money(q.est.fees, true)} fees.{' '}
                 {q.est.keep < 10 ? 'Thin: ads will eat most of that.' : q.est.keep > 15 ? 'Healthy room for ads.' : 'Workable if ads are efficient.'}
               </li>
             </ul>
             <p className="tiny muted">Demand, competition and search volume are now on the product’s card. A deep dive reads the reviews and finds your angle.</p>
             <div className="row" style={{ justifyContent: 'center' }}>
               <button className="primary" onClick={() => setModal({ kind: 'scan', productId })}>
-                🧪 Deep dive (2h)
+                <Icon name="zoomIn" /> Deep dive (2h)
               </button>
               <button className="ghost" onClick={() => setModal(null)}>
                 Back to the board

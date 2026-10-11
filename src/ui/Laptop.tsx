@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import type { GameState } from '../sim/types';
+import { hasSkill } from '../sim/economics';
+import type { GameState, SkillId } from '../sim/types';
 import { type TabId, useGame } from '../state/store';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Ads } from './apps/Ads';
@@ -15,6 +16,8 @@ import { ShopBloc } from './apps/ShopBloc';
 import { SourceMart } from './apps/SourceMart';
 import { Team } from './apps/Team';
 import { Wall } from './apps/Wall';
+import { Skills } from './apps/Skills';
+import { withIcons } from './icons';
 
 interface Tab {
   id: TabId;
@@ -27,6 +30,7 @@ const hasProduct = (s: GameState) => s.productOrder.length > 0;
 
 const TABS: Tab[] = [
   { id: 'products', label: '📈 Products', show: () => true, render: () => <Products /> },
+  { id: 'skills', label: '🎓 SkillUp', show: () => true, render: () => <Skills /> },
   { id: 'source', label: '🏭 SourceMart', show: hasProduct, render: () => <SourceMart /> },
   { id: 'store', label: '🛍️ ShopBloc', show: hasProduct, render: () => <ShopBloc /> },
   { id: 'offer', label: '🏷️ Offer', show: hasProduct, render: () => <OfferApp /> },
@@ -51,6 +55,7 @@ export function Laptop() {
     ops: game.stage === 1 && !game.batchPacking ? Math.round(backlog) : 0,
     inbox: game.cards.length + game.events.filter((e) => !e.blocking).length,
     company: game.stageOffer ? '!' : 0,
+    skills: Object.entries(game.skills).filter(([id, st]) => st && !hasSkill(game, id as SkillId)).length,
   };
   const visible = TABS.filter((t) => t.show(game));
   const active = visible.find((t) => t.id === tab) ?? visible[0];
@@ -60,7 +65,7 @@ export function Laptop() {
       <nav className="tabs">
         {visible.map((t) => (
           <button key={t.id} className={t.id === active.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-            {t.label}
+            {withIcons(t.label)}
             {!!badges[t.id] && <span className="badge">{badges[t.id]}</span>}
           </button>
         ))}

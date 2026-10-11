@@ -1,9 +1,9 @@
-import { CHANNELS, CREATORS, MARKETPLACES } from '../data';
-import { breakEvenCPA, creativeUnlocked, def, liveProducts, orderBreakdown, recentCPA, round2, stockQuality } from '../economics';
+import { CHANNELS, CREATORS, HOURS, MARKETPLACES } from '../data';
+import { breakEvenCPA, creativeUnlocked, def, hasSkill, liveProducts, orderBreakdown, recentCPA, round2, stockQuality } from '../economics';
 import { chance, pick } from '../rng';
 import type { CampaignType, CategoryId, ChannelId, Creative, CreativeType, EmailCampaign, GameState, Listing, Segment } from '../types';
 import { addReviews } from './reviews';
-import { type ActionResult, adStat, book, milestone, nextId, notify, spendOn } from './core';
+import { type ActionResult, adStat, book, milestone, nextId, notify, spendOn, useHours } from './core';
 import { onStore } from './storefront';
 
 // ───────────────────────────── Scrollr ─────────────────────────────
@@ -12,6 +12,7 @@ export function setAdCell(s: GameState, pid: string, key: string, patch: { activ
   const p = s.products[pid];
   const cell = p?.ads[key];
   if (!cell) return 'Unknown ad.';
+  if (patch.active && !hasSkill(s, 'adsBasics')) return 'Take the Ads Launchpad course in SkillUp first: you don’t have an ad account yet.';
   if (patch.active && !creativeUnlocked(s, pid, cell.creative)) return cell.creative === 'ugc' ? 'Hire a creator for this product first.' : 'This creative needs 3+ reviews first.';
   if (patch.active && !onStore(s, pid)) return 'This product isn’t live in your store yet (store launched, photo and description).';
   if (patch.active && !p.inventory.onHand && !p.sold) return 'Wait until stock arrives. Ads to an empty store waste money.';
@@ -23,11 +24,11 @@ export function setAdCell(s: GameState, pid: string, key: string, patch: { activ
 // ───────────────────────────── Seekly ─────────────────────────────
 
 export function searchUnlocked(s: GameState): boolean {
-  return s.stage >= 2 || !!s.milestones.first_profitable_campaign;
+  return hasSkill(s, 'searchAds');
 }
 
 export function setSearch(s: GameState, pid: string, patch: { active?: boolean; budget?: number }): ActionResult {
-  if (!searchUnlocked(s)) return 'Seekly search ads unlock after your first profitable campaign.';
+  if (!searchUnlocked(s)) return 'Finish the Search Ads Bootcamp in SkillUp to run Seekly ads.';
   const p = s.products[pid];
   if (patch.active && !onStore(s, pid)) return 'This product isn’t live in your store yet.';
   if (patch.budget !== undefined) p.search.budget = Math.max(5, Math.min(5000, Math.round(patch.budget)));
@@ -250,6 +251,23 @@ export function completeAngleTest(s: GameState, pid: string, score: number): Act
     s.modifiers = (s.modifiers ?? []).filter((m) => !(m.key === 'adCtr' && m.scope === pid && m.label === 'Fresh angle'));
     s.modifiers.push({ id: nextId(s), key: 'adCtr', scope: pid, mult: 1 + 0.07 * score, until: s.day + 21, label: 'Fresh angle' });
   }
+  return null;
+}
+
+/** Ad quality from competitor research (0..5 right calls), plus the creatives course. */
+export function creativeQualityFrom(s: GameState, score: number): number {
+  return Math.min(1, 0.3 + 0.13 * score + (hasSkill(s, 'copywriting') ? 0.08 : 0));
+}
+
+/** Finish a competitor creative research session for a product. Keeps the best result. */
+export function completeCreativeResearch(s: GameState, pid: string, score: number, hook?: string): ActionResult {
+  const p = s.products[pid];
+  if (!p) return 'Unknown product.';
+  if (!hasSkill(s, 'adSpy')) return 'You need the AdSpy Library (SkillUp) to see competitor ads.';
+  const err = useHours(s, HOURS.creativeResearch);
+  if (err) return err;
+  p.creativeQuality = Math.max(p.creativeQuality ?? 0, creativeQualityFrom(s, score));
+  if (hook) for (const c of Object.values(p.creatives)) c.hook = hook;
   return null;
 }
 

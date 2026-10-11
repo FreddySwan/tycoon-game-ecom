@@ -1,5 +1,5 @@
 import { BATCH_UNLOCK_AFTER, FRIEND_HELP, HOURS, PACKAGING_COST, PACKER_RATE, ROLES, SPACES, THANK_YOU_COST, THIRD_PARTY, TILE_COST } from '../data';
-import { brandOf, def, intlExtraCost, mod, round2, seatsUsed, stockQuality, storageCapacity, storageUsed } from '../economics';
+import { brandOf, def, intlExtraCost, mod, packHours, round2, seatsUsed, stockQuality, storageCapacity, storageUsed } from '../economics';
 import type { BacklogBucket, CardChoice, CustomerCard, GameState, RoleId, TileId } from '../types';
 import { type ActionResult, book, milestone, notify, slice, spendOn, useHours } from './core';
 import { applyCardChoice } from './reviews';
@@ -48,7 +48,7 @@ export function nextHandPack(s: GameState): BacklogBucket | undefined {
 export function handPack(s: GameState): ActionResult {
   const b = nextHandPack(s);
   if (!b) return 'Nothing to pack.';
-  const err = useHours(s, HOURS.handPack);
+  const err = useHours(s, packHours(s));
   if (err) return err;
   shipFromBucket(s, b, 1);
   s.backlog = s.backlog.filter((x) => x.orders > 0.001);

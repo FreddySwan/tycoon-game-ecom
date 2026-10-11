@@ -105,6 +105,8 @@ export function createBrand(s: GameState, name: string): ActionResult {
   b.store.modules = { ...s.brands[0].store.modules };
   b.store.launched = true;
   b.store.launchedDay = s.day;
+  // Your designer builds new brand stores to the standard of the first one.
+  b.store.quality = Math.max(0.6, s.brands[0].store.quality ?? 0.6);
   s.brands.push(b);
   if (s.brands.length >= 2) milestone(s, 'second_brand');
   notify(s, 'info', `🎨 ${b.name} is born, with its own store. Move products to it from the product page.`);

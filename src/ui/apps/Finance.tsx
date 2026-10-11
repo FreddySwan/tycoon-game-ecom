@@ -13,6 +13,7 @@ import { useGame } from '../../state/store';
 import { AppTitle } from '../bits';
 import { money } from '../format';
 import { LineChart, type Marker } from '../LineChart';
+import { Icon, withIcons } from '../icons';
 
 const ROWS: { k: PLCategory; label: string }[] = [
   { k: 'revenue', label: 'Revenue' },
@@ -138,29 +139,29 @@ export function Finance() {
       <AppTitle app="Bank" title="Cash River" sub="Profit is the score. Cash is what keeps you alive. Follow where your money is right now." />
       <div className="river">
         <div className="pool cash">
-          💵 Bank
+          <Icon name="money" /> Bank
           <b>{money(pools.cash)}</b>
           spendable
         </div>
         <span className="arrow">→</span>
         <div className={`pool ${pools.production ? 'locked' : ''}`}>
-          🏭 In production
+          <Icon name="buildings" /> In production
           <b>{money(pools.production)}</b>
         </div>
         <span className="arrow">→</span>
         <div className={`pool ${pools.transit ? 'locked' : ''}`}>
-          🚢 In transit
+          <Icon name="ship" /> In transit
           <b>{money(pools.transit)}</b>
         </div>
         <span className="arrow">→</span>
         <div className={`pool ${pools.shelf ? 'locked' : ''}`}>
-          📦 On the shelf
+          <Icon name="archive" /> On the shelf
           <b>{money(pools.shelf)}</b>
           at cost
         </div>
         <span className="arrow">→</span>
         <div className="pool">
-          ⏳ Payouts coming
+          <Icon name="hourglass" /> Payouts coming
           <b>{money(pools.payouts + pools.receivables)}</b>
           {nextIn ? `next on ${shortDate(nextIn)}` : 'from channels'}
         </div>
@@ -168,7 +169,7 @@ export function Finance() {
           <>
             <span className="arrow">·</span>
             <div className="pool locked">
-              🧾 Owed to suppliers
+              <Icon name="reciept" /> Owed to suppliers
               <b>{money(pools.payables)}</b>
               balances & net-30
             </div>
@@ -214,7 +215,7 @@ export function Finance() {
       </p>
       {low < 0 ? (
         <p className="callout bad">
-          ⚠️ Cash is projected to hit <b>{money(low)}</b> around {dateLabel(lowDay)}. Options: pause losing ads, order smaller or by sea, run a sale on slow stock{credit.unlocked ? ', or draw on your credit line' : ''}.
+          <Icon name="warning" /> Cash is projected to hit <b>{money(low)}</b> around {dateLabel(lowDay)}. Options: pause losing ads, order smaller or by sea, run a sale on slow stock{credit.unlocked ? ', or draw on your credit line' : ''}.
         </p>
       ) : (
         <p className="callout good">
@@ -222,7 +223,7 @@ export function Finance() {
         </p>
       )}
 
-      <h3>⏳ Money on its way</h3>
+      <h3><Icon name="hourglass" /> Money on its way</h3>
       {payouts.length || game.receivables.length ? (
         <table className="data">
           <thead>
@@ -237,7 +238,7 @@ export function Finance() {
             {payouts.map((p) => (
               <tr key={p.channel}>
                 <td>
-                  {CHANNELS[p.channel].emoji} {CHANNELS[p.channel].name} <span className="tiny muted">pays every {CHANNELS[p.channel].payoutEvery} days</span>
+                  {withIcons(CHANNELS[p.channel].emoji)} {CHANNELS[p.channel].name} <span className="tiny muted">pays every {CHANNELS[p.channel].payoutEvery} days</span>
                 </td>
                 <td>
                   {dateLabel(p.day)} <span className="tiny muted">({p.day - game.day === 1 ? 'tomorrow' : `in ${p.day - game.day} days`})</span>
@@ -252,7 +253,7 @@ export function Finance() {
               .sort((a, b) => a.dueDay - b.dueDay)
               .map((r, k) => (
                 <tr key={`r${k}`}>
-                  <td>🧾 {r.label}</td>
+                  <td><Icon name="reciept" /> {r.label}</td>
                   <td>
                     {dateLabel(r.dueDay)} <span className="tiny muted">(in {r.dueDay - game.day} days)</span>
                   </td>
@@ -271,7 +272,7 @@ export function Finance() {
 
       {credit.unlocked && (
         <>
-          <h3>💳 Credit line</h3>
+          <h3><Icon name="creditCard" /> Credit line</h3>
           <div className="row between">
             <span>
               Owed <b>{money(credit.balance)}</b> of {money(credit.limit)} limit · 1.5% interest a month
@@ -314,7 +315,7 @@ export function Finance() {
       <h3>Profit by channel</h3>
       <SliceTable
         showThirdParty={anyThirdParty}
-        rows={(Object.entries(byChannel) as [ChannelId, NonNullable<(typeof byChannel)[ChannelId]>][]).sort((a, b) => b[1].revenue - a[1].revenue).map(([ch, x]) => ({ key: ch, label: `${CHANNELS[ch].emoji} ${CHANNELS[ch].name}`, x }))}
+        rows={(Object.entries(byChannel) as [ChannelId, NonNullable<(typeof byChannel)[ChannelId]>][]).sort((a, b) => b[1].revenue - a[1].revenue).map(([ch, x]) => ({ key: ch, label: `${withIcons(CHANNELS[ch].emoji)} ${CHANNELS[ch].name}`, x }))}
       />
       <p className="tiny muted">Profit here is contribution: revenue minus product cost, shipping & packing (incl. 3PL fees), payment/marketplace fees, ads and refunds. Payroll, rent and overhead are shared costs and not split by product.</p>
 

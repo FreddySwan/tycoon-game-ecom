@@ -4,6 +4,7 @@ import { cardChoices, resolveCard, resolveEvent, setOutsource, setTemplate, temp
 import type { CardKind, ModKey } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle, Toggle } from '../bits';
+import { Icon, withIcons } from '../icons';
 
 const KIND_LABEL: Record<CardKind, string> = { damaged: '📦 Arrived damaged', defect: '🤨 Quality complaint', late: '⏰ Late delivery' };
 
@@ -18,7 +19,7 @@ export function Inbox() {
     const effect: Record<ModKey, string> = { adCost: 'ad costs', adCtr: 'ad clicks', seaFreight: 'sea freight', airFreight: 'air freight', unitCost: 'unit cost', packaging: 'packaging', cvr: 'conversion', creditRate: 'credit interest', creditLimit: 'credit limit', shipping: 'shipping', quality: 'quality' };
     return (
       <div className="chat" style={{ marginBottom: 14 }}>
-        <b>🤝 Active deals</b>
+        <b><Icon name="briefcaseCheck" /> Active deals</b>
         {active.map((m) => (
           <div key={m.id} className="row between tiny" style={{ marginTop: 4 }}>
             <span>
@@ -35,12 +36,12 @@ export function Inbox() {
 
   function templatesPanel() {
     if (game.team.support.count > 0)
-      return <p className="tiny muted">🎧 Your support team answers customer issues using the policy in Ops. Only business decisions land here.</p>;
+      return <p className="tiny muted"><Icon name="headset" /> Your support team answers customer issues using the policy in Ops. Only business decisions land here.</p>;
     const unlocked = templatesUnlocked(game);
     return (
       <div className="chat" style={{ marginBottom: 14 }}>
         <div className="row between">
-          <b>⚡ Standard replies</b>
+          <b><Icon name="zap" /> Standard replies</b>
           {unlocked && <Toggle on={!!game.support.outsource} onChange={(v) => act(setOutsource, v)} label={<>Outsource to a support service <span className="tiny muted">($2.50/message, no founder time)</span></>} />}
         </div>
         {!unlocked ? (
@@ -53,7 +54,7 @@ export function Inbox() {
             <div style={{ display: 'grid', gap: 6 }}>
               {(Object.keys(KIND_LABEL) as CardKind[]).map((kind) => (
                 <div key={kind} className="row between">
-                  <span>{KIND_LABEL[kind]}</span>
+                  <span>{withIcons(KIND_LABEL[kind])}</span>
                   <select value={game.support.templates?.[kind] ?? ''} onChange={(e) => act(setTemplate, kind, e.target.value || null)}>
                     <option value="">Ask me every time</option>
                     {cardChoices(kind).map((c) => (
@@ -80,11 +81,11 @@ export function Inbox() {
         <div key={ev.id} className="inbox-card" style={{ borderColor: '#f2d48a', background: '#fffaf0' }}>
           <div className="row between">
             <div className="who">
-              <span className="av">⚠️</span> {ev.title}
+              <span className="av"><Icon name="warning" /></span> {withIcons(ev.title)}
             </div>
             {ev.expiresDay !== undefined && <span className="pill">decide by day {ev.expiresDay}</span>}
           </div>
-          <p style={{ margin: '6px 0 0' }}>{ev.body}</p>
+          <p style={{ margin: '6px 0 0' }}>{withIcons(ev.body)}</p>
           <div className="choices">
             {ev.choices.map((c) => (
               <button key={c.id} onClick={() => act(resolveEvent, ev.id, c.id)}>
@@ -100,7 +101,7 @@ export function Inbox() {
         <div key={card.id} className="inbox-card">
           <div className="row between">
             <div className="who">
-              <span className="av">{card.avatar}</span> {card.customer}
+              <span className="av">{withIcons(card.avatar)}</span> {card.customer}
               <span className="tiny muted"> · {def(game, card.productId).name}</span>
             </div>
             <span className={`pill ${card.expiresDay - game.day <= 1 ? 'bad' : ''}`}>{card.expiresDay - game.day <= 0 ? 'Reply today!' : `${card.expiresDay - game.day + 1} days to reply`}</span>

@@ -1,8 +1,9 @@
-import { BRAND_COLORS, CITIES, FIRST_NAMES, FOUNDER_HOURS, LAST_INITIALS, MODULE_IDS, STARTING_CASH } from '../data';
+import { STARTING_DEBT, BRAND_COLORS, CITIES, FIRST_NAMES, FOUNDER_HOURS, LAST_INITIALS, MODULE_IDS, STARTING_CASH } from '../data';
 import { def, emptyPL, hoursLeft, round2 } from '../economics';
 import { pick } from '../rng';
+import { startStory } from './story';
 import { CHANNELS, hooksFor } from '../data';
-import type { AdDay, AdSource, Brand, ChannelId, Creative, CreativeType, DailyRecord, GameState, MilestoneId, ModuleId, NoticeKind, OrderSource, PLCategory, ProductDef, ProductState, RoleId, Slice } from '../types';
+import type { AdDay, AdSource, Brand, ChannelId, Creative, CreativeType, DailyRecord, Difficulty, GameState, MilestoneId, ModuleId, NoticeKind, OrderSource, PLCategory, ProductDef, ProductState, RoleId, Slice, StoryState } from '../types';
 
 export type ActionResult = string | null;
 
@@ -130,9 +131,12 @@ function team(): Record<RoleId, { count: number; morale: number; wageMult: numbe
   return { packer: t(), support: t(), marketer: t(), buyer: t(), lead: t(), designer: t(), brandmgr: t() };
 }
 
-export function createGame(seed = Date.now()): GameState {
-  return {
+export function createGame(seed = Date.now(), difficulty: Difficulty = 'normal'): GameState {
+  const s: GameState = {
     version: 2,
+    skills: {},
+    difficulty,
+    story: newStory(),
     rng: seed | 0,
     day: 1,
     cash: STARTING_CASH,
@@ -203,6 +207,8 @@ export function createGame(seed = Date.now()): GameState {
     seq: 100,
     lastDayOrders: 0,
   };
+  startStory(s);
+  return s;
 }
 
 // ───────────────────────────── helpers ─────────────────────────────
@@ -335,7 +341,22 @@ export function founderHours(): number {
 }
 
 /** Bring older saves up to the current shape. */
+/** The founder's personal story: energy, who they owe, and the people around them. */
+export function newStory(): StoryState {
+  return { energy: 90, debt: { ...STARTING_DEBT }, bond: { mom: 70, dad: 15, sam: 70, maya: 60 }, messages: [], beats: {} };
+}
+
 export function migrate(s: GameState): GameState {
+  if (!s.skills) {
+    // Saves from before SkillUp: you already know how to do what you've been doing.
+    s.skills = { adsBasics: { progress: 4 }, searchAds: { progress: 4 }, researchTool: { progress: 0, active: true }, adSpy: { progress: 0, active: true } };
+  }
+  s.difficulty ??= 'normal';
+  if (!s.story) {
+    s.story = newStory();
+    s.story.beats = { intro: 1, older: 1 };
+  }
+  for (const b of s.brands) if (b.store.quality === undefined) b.store.quality = b.store.launched ? 0.6 : null;
   s.adPolicy ??= { maxSharePct: 20, floor: 100, marginPct: 25 };
   s.adPolicy.marginPct ??= 25;
   s.adPolicy.pauseOOS ??= true;

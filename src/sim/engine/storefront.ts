@@ -1,8 +1,8 @@
 import { MODULES, packScore, STORE_SUBSCRIPTION } from '../data';
-import { def, round2 } from '../economics';
+import { def, hasSkill, round2 } from '../economics';
 import type { Brand, GameState, ModuleId, PackDesign, Packaging, PhotoChoice, Vibe } from '../types';
 import { HOURS } from '../data';
-import { type ActionResult, milestone, nextId, spendOn, useHours } from './core';
+import { type ActionResult, milestone, nextId, notify, spendOn, useHours } from './core';
 
 function brand(s: GameState, brandId: number): Brand {
   return s.brands.find((b) => b.id === brandId) ?? s.brands[0];
@@ -67,7 +67,8 @@ export function scorePhoto(s: GameState, pid: string, choice: PhotoChoice): numb
   if (choice.prop === best.prop) raw += 1;
   if (choice.angle === best.angle) raw += 1;
   else if (choice.angle !== 'top') raw += 0.25;
-  return Math.max(1, Math.min(5, Math.round(1 + (raw - 1) * 0.8 + compositionScore(choice) * 1.1)));
+  const course = hasSkill(s, 'photography') ? 1 : 0;
+  return Math.max(1, Math.min(5, Math.round(1 + (raw - 1) * 0.8 + compositionScore(choice) * 1.1) + course));
 }
 
 export function canShoot(s: GameState, pid: string): boolean {
@@ -98,9 +99,31 @@ export function hirePhotographer(s: GameState, pid: string): ActionResult {
   return null;
 }
 
+export const STORE_BUILD_DAYS = 2;
+
+/** Quality from the store-builder mini-game (0..5 right calls), plus the store course. */
+export function storeQualityFrom(s: GameState, score: number): number {
+  return Math.min(1, 0.3 + 0.14 * score + (hasSkill(s, 'storeCourse') ? 0.1 : 0));
+}
+
+/** Finish building the store pages. They take a couple of days to set up before you can launch. */
+export function completeStoreBuild(s: GameState, brandId: number, score: number): ActionResult {
+  const b = brand(s, brandId);
+  const err = useHours(s, HOURS.storeBuild);
+  if (err) return err;
+  const quality = storeQualityFrom(s, score);
+  const first = b.store.quality == null;
+  b.store.quality = first ? quality : Math.max(b.store.quality ?? 0, quality);
+  if (!b.store.launched) b.store.readyDay = s.day + STORE_BUILD_DAYS;
+  notify(s, 'info', b.store.launched ? `🛍️ Store pages rebuilt: quality ${Math.round((b.store.quality ?? 0) * 100)}%.` : `🛍️ Store pages designed (quality ${Math.round(quality * 100)}%). Setup takes ${STORE_BUILD_DAYS} days.`);
+  return null;
+}
+
 export function launchProblems(s: GameState, brandId: number): string[] {
   const b = brand(s, brandId);
   const out: string[] = [];
+  if (b.store.quality == null) out.push('Build your store pages in the Store builder');
+  else if ((b.store.readyDay ?? 0) > s.day) out.push(`Your store is still being set up (ready in ${(b.store.readyDay ?? 0) - s.day} day${(b.store.readyDay ?? 0) - s.day === 1 ? '' : 's'})`);
   const pids = Object.keys(s.products).filter((id) => s.products[id].brandId === b.id);
   if (!pids.length) out.push('Pick a product');
   if (!pids.some((id) => s.products[id].photo)) out.push('Take a product photo');

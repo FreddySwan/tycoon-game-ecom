@@ -13,11 +13,14 @@ export const THANK_YOU_COST = 0.1;
 export const CUSTOMER_SHIPPING_CHARGE = 4.99;
 export const STORE_SUBSCRIPTION = 29;
 export const HOURS = {
-  handPack: 0.15,
+  /** Founder hours per hand-packed order, before packing gear. */
+  handPack: 0.25,
   inspectSample: 0.5,
   photoShoot: 2,
   card: 0.25,
   research: 3,
+  storeBuild: 4,
+  creativeResearch: 2,
   /** Digging for your very first product is quicker: you have nothing else to do. */
   dig: 1,
   investigate: 1,

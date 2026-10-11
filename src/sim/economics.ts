@@ -18,6 +18,11 @@ import {
   MODULES,
   OVERHEAD_RATE,
   PAYROLL_EVERY,
+  PACK_SPEED,
+  SKILLS,
+  DIFFICULTY,
+  TIRED,
+  EXHAUSTED,
   PACKAGING_COST,
   PACKER_RATE,
   RACK_STORAGE,
@@ -45,6 +50,7 @@ import type {
   ProductDef,
   Slice,
   ProductState,
+  SkillId,
   SupplierId,
 } from './types';
 
@@ -90,7 +96,7 @@ export function listPrice(s: GameState, pid: string, supplierId: SupplierId, qty
   const tier = qty >= 10000 ? 0.8 : qty >= 3000 ? 0.83 : qty >= 1000 ? 0.855 : qty >= 500 ? 0.945 : 1;
   const contract = activeContract(s, supplierId);
   const priceUp = (1 + (s.counters[`priceUp-${supplierId}`] ?? 0)) * mod(s, 'unitCost', supplierId);
-  return round2(def(s, pid).baseUnitCost * SUPPLIERS[supplierId].priceMult * tier * priceUp * (contract ? 1 - contract.discount : 1));
+  return round2(def(s, pid).baseUnitCost * SUPPLIERS[supplierId].priceMult * tier * priceUp * marketOf(s, pid).cost * (contract ? 1 - contract.discount : 1));
 }
 
 export function freightPerUnit(s: GameState, pid: string, freight: 'air' | 'sea'): number {
@@ -257,6 +263,7 @@ export function trustBreakdown(s: GameState, pid: string): { total: number; part
   if (pos && p.benefits.includes(pos)) add('Answers the #1 complaint', 0.05);
   if (brand.store.order?.length) add('Page flow', 0.06 * layoutScore(brand.store.order.filter((x) => m[x] > 0)) - 0.02);
   if (brand.theme) add('Theme fit', brand.theme === CATEGORY_VIBE[d.category] ? 0.03 : -0.01);
+  if (brand.store.quality != null) add('Store build quality', (brand.store.quality - 0.55) * 0.3);
 
   const count = MODULES.filter((x) => m[x.id] > 0).length;
   const heavy = (m.hero === 2 ? 1 : 0) + (m.gallery === 2 ? 1 : 0);
@@ -311,7 +318,7 @@ export function trendMult(s: GameState, pid: string, day = s.day): number {
 
 /** Copycat sellers steal a share of every shopper who would have bought. */
 export function copycatMult(s: GameState, pid: string): number {
-  return 1 - s.products[pid].copycat;
+  return (1 - s.products[pid].copycat) * (s.products[pid].market?.share ?? 1);
 }
 
 export function siteCVR(s: GameState, pid: string, aud: AudienceDef | null, cvrBoost = 1): number {
@@ -338,13 +345,15 @@ export function cellForecast(s: GameState, pid: string, cell: AdCell): CellForec
   const cre = CREATIVES[cell.creative];
   const reach = 1 + intlFactor(s);
   const competition = 0.55 + d.bars.competition * 0.15;
-  const cpm = aud.cpm * competition * cpmSeason(s.day) * (1 + Math.pow(cell.budget / (aud.scale * reach), 1.15) * 0.6) * mod(s, 'adCost');
+  const skill = hasSkill(s, 'adsAdvanced') ? 0.92 : 1;
+  const cpm = aud.cpm * competition * cpmSeason(s.day) * (1 + Math.pow(cell.budget / (aud.scale * reach), 1.15) * 0.6) * mod(s, 'adCost') * marketOf(s, pid).ad * skill;
   const fatigue = Math.max(0.6, 1 - 0.012 * Math.max(0, cell.daysActive - 5));
   const marketer = s.team.marketer.count > 0 ? 1.1 : 1;
   const doy = dayOfYear(s.day);
   const resolution = cell.audienceId === 'fresh' && doy >= 300 && doy <= 345 ? 1.4 : 1;
   const cm = creativeMult(s, pid, cell.creative, idx);
-  const ctr = cre.ctr * cre.fit[idx] * fatigue * marketer * Math.min(1.8, trendMult(s, pid)) * resolution * cm.ctr * mod(s, 'adCtr', pid);
+  const craft = (hasSkill(s, 'copywriting') ? 1.1 : 1) * (hasSkill(s, 'adsAdvanced') ? 1.12 : 1);
+  const ctr = cre.ctr * cre.fit[idx] * fatigue * marketer * Math.min(1.8, trendMult(s, pid)) * resolution * cm.ctr * craft * mod(s, 'adCtr', pid);
   const cpc = cpm / (1000 * ctr);
   const cvr = siteCVR(s, pid, aud, cre.cvrBoost) * cm.cvr;
   return { cpm, ctr, cpc, cvr, cpa: cpc / cvr };
@@ -367,7 +376,10 @@ export function creativeMult(s: GameState, pid: string, type: AdCell['creative']
   const photo = cr.photo < 0 ? 0.75 + p.photoStars * 0.08 : 1;
   if (cr.photo < 0 && p.photoStars >= 4) notes.push('Your own photo stands out');
   if (cr.photo < 0 && p.photoStars <= 2) notes.push('Weak photo hurts clicks');
-  return { ctr: fit.ctr[audIdx] * CTA_FIT[cr.cta].ctr * photo * believable, cvr: fit.cvr * CTA_FIT[cr.cta].cvr, notes };
+  const q = p.creativeQuality ?? 0.45;
+  if (q >= 0.75) notes.push('Researched against competitors');
+  if (q < 0.45) notes.push('Unresearched creative');
+  return { ctr: fit.ctr[audIdx] * CTA_FIT[cr.cta].ctr * photo * believable * (0.8 + 0.45 * q), cvr: fit.cvr * CTA_FIT[cr.cta].cvr * (0.92 + 0.18 * q), notes };
 }
 
 export function creativeUnlocked(s: GameState, pid: string, creative: AdCell['creative']): boolean {
@@ -386,9 +398,9 @@ export function recentCPA(cell: { history: { spend: number; orders: number }[] }
 
 export function searchForecast(s: GameState, pid: string) {
   const d = def(s, pid);
-  const cpc = (0.6 + 0.25 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost');
+  const cpc = (0.6 + 0.25 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost') * marketOf(s, pid).ad;
   const maxClicks = d.searchVolume * trendMult(s, pid) * (1 + intlFactor(s)) * copycatMult(s, pid);
-  const cvr = siteCVR(s, pid, null) * 1.6;
+  const cvr = siteCVR(s, pid, null) * 1.6 * (hasSkill(s, 'searchAds') ? 1.1 : 1);
   return { cpc, maxClicks, cvr, cpa: cpc / cvr };
 }
 
@@ -428,9 +440,45 @@ export function intlExtraCost(s: GameState, pid: string): number {
 
 // ───────────────────────────── operations ─────────────────────────────
 
+// ───────────────────────────── founder & skills ─────────────────────────────
+
+/** Courses count once studied, software while subscribed, gear once bought. */
+export function hasSkill(s: GameState, id: SkillId): boolean {
+  const st = s.skills?.[id];
+  if (!st) return false;
+  const d = SKILLS[id];
+  if (d.kind === 'course') return st.progress >= (d.hours ?? 0);
+  if (d.kind === 'software') return !!st.active;
+  return true;
+}
+
+/** Founder hours per day: 10, minus what tiredness costs. */
+export function founderMaxHours(s: GameState): number {
+  const e = s.story?.energy ?? 100;
+  const tired = e < EXHAUSTED.energy ? EXHAUSTED.hours : e < TIRED.energy ? TIRED.hours : 0;
+  return FOUNDER_HOURS - tired;
+}
+
 export function hoursLeft(s: GameState): number {
   if (s.flags.adminHours) return FOUNDER_HOURS + s.extraHours;
-  return Math.max(0, FOUNDER_HOURS + s.extraHours - s.hoursUsed);
+  return Math.max(0, founderMaxHours(s) + s.extraHours - s.hoursUsed);
+}
+
+/** Founder hours to pack one order: packing gear speeds it up. */
+export function packHours(s: GameState): number {
+  let h = HOURS.handPack;
+  for (const [id, mult] of Object.entries(PACK_SPEED)) if (hasSkill(s, id as SkillId)) h *= mult ?? 1;
+  return h;
+}
+
+/** How far a product's market has drifted (ad costs, unit costs) since you started selling it. */
+export function marketOf(s: GameState, pid: string): { ad: number; cost: number; share: number } {
+  const m = s.products[pid]?.market;
+  return { ad: m?.ad ?? 1, cost: m?.cost ?? 1, share: m?.share ?? 1 };
+}
+
+export function difficultyOf(s: GameState) {
+  return DIFFICULTY[s.difficulty ?? 'normal'];
 }
 
 export function moraleMult(m: number): number {
@@ -440,7 +488,7 @@ export function moraleMult(m: number): number {
 export function storageCapacity(s: GameState): number {
   if (s.thirdParty) return Infinity;
   const racks = s.layout.cells.filter((c) => c === 'rack').length;
-  return SPACES[s.space].storage + racks * RACK_STORAGE;
+  return SPACES[s.space].storage + racks * RACK_STORAGE + (s.stage === 2 ? (s.counters.storageBonus ?? 0) : 0);
 }
 
 export function storageUsed(s: GameState): number {
@@ -490,7 +538,7 @@ export interface Capacity {
 
 export function fulfillmentCapacity(s: GameState): Capacity {
   const thirdParty = s.thirdParty;
-  const founder = !thirdParty && s.stage <= 2 && s.batchPacking ? Math.floor(hoursLeft(s) / HOURS.handPack) : 0;
+  const founder = !thirdParty && s.stage <= 2 && s.batchPacking ? Math.floor(hoursLeft(s) / packHours(s)) : 0;
   const effs = stationEfficiencies(s);
   const packers = s.team.packer.count;
   const shifts = s.team.lead.count > 0 ? s.shifts : 1;

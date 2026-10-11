@@ -1,5 +1,6 @@
 import { useGame } from '../state/store';
 import { currentGoal } from './goals';
+import { Icon, withIcons } from './icons';
 
 export function GoalNote() {
   const game = useGame((s) => s.game);
@@ -7,7 +8,7 @@ export function GoalNote() {
   const goal = currentGoal(game);
   return (
     <div className="goal" onClick={() => goal.tab && setTab(goal.tab)} style={{ cursor: goal.tab ? 'pointer' : 'default' }}>
-      <b>📌 {goal.title}</b>
+      <b><Icon name="pin" /> {goal.title}</b>
       {goal.hint}
     </div>
   );
@@ -24,7 +25,7 @@ export function Feed() {
         .map((n) => (
           <div key={n.id}>
             <span className="day">D{n.day}</span>
-            {n.text}
+            {withIcons(n.text)}
           </div>
         ))}
     </div>

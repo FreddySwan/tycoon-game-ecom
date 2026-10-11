@@ -37,7 +37,7 @@ const PROBLEM: Record<string, string> = {
 };
 
 const EMOTIONAL: Record<CategoryId, string> = {
-  pets: 'Because they’re family. 🐾',
+  pets: 'Because they’re family.',
   home: 'Make your place feel like home.',
   desk: 'A desk you actually want to sit at.',
   kitchen: 'Little upgrades, better mornings.',

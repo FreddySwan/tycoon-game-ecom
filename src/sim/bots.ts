@@ -6,6 +6,7 @@ import {
   breakEvenCPA,
   def,
   fulfillmentCapacity,
+  hasSkill,
   incomingUnits,
   listPrice,
   liveProducts,
@@ -18,7 +19,7 @@ import {
   unitsPerOrder,
 } from './economics';
 import { stageReady } from './progress';
-import type { GameState, ModuleId, StageId, SupplierId } from './types';
+import type { Difficulty, GameState, ModuleId, SkillId, StageId, SupplierId } from './types';
 
 /** Scripted players used for balance testing. */
 export interface BotResult {
@@ -59,6 +60,27 @@ function resolveAll(s: GameState) {
     const choice = ev.choices.find((x) => x.id === want) ?? (ev.kind === 'cash-crisis' ? ev.choices[0] : ev.choices[ev.choices.length - 1]);
     if (E.resolveEvent(s, ev.id, choice.id)) E.resolveEvent(s, ev.id, ev.choices[ev.choices.length - 1].id);
   }
+}
+
+/** Courses, tools, store build, creative research and the founder's texts, done like a sensible player. */
+function founder(s: GameState, storeScore = 4) {
+  const learn = (id: SkillId, when: boolean) => {
+    if (!s.skills[id] && when) E.buySkill(s, id);
+    if (s.skills[id] && !hasSkill(s, id)) E.studySkill(s, id);
+  };
+  learn('adsBasics', s.cash > 500);
+  learn('tapeGun', s.cash > 900);
+  learn('labelPrinter', s.cash > 2500 && s.shipped > 20);
+  learn('adSpy', s.cash > 1500 && s.brands[0].store.launched);
+  learn('searchAds', s.stage >= 2 && s.cash > 3000);
+  if (s.brands[0].store.quality == null) E.completeStoreBuild(s, 1, storeScore);
+  if (hasSkill(s, 'adSpy')) for (const pid of liveProducts(s)) if ((s.products[pid].creativeQuality ?? 0) < 0.8) E.completeCreativeResearch(s, pid, 4);
+  for (const m of s.story.messages) {
+    if (!m.choices || m.answer) continue;
+    const want = m.beat.startsWith('visit') ? (s.story.energy < 55 ? 'hang' : 'help') : ({ momMoney: s.cash < 300 ? 'take' : 'decline', burnout: 'rest', garage: 'yes', class: 'go' } as Record<string, string>)[m.beat];
+    E.answerMessage(s, m.id, want ?? m.choices[0].id);
+  }
+  if (s.stage >= 2 && s.cash > 25000) for (const who of ['mom', 'sam', 'maya'] as const) E.repayDebt(s, who, s.story.debt[who]);
 }
 
 function bestSupplier(s: GameState, qty: number): SupplierId {
@@ -277,8 +299,8 @@ export function fullBot(seed: number, days = 720, log?: (line: string) => void):
 }
 
 /** Play a whole game with the scripted player and hand back the final state (dev tool + tests). */
-export function runBot(seed: number, days = 720, log?: (line: string) => void, start?: GameState, until?: (s: GameState) => boolean): { s: GameState; result: BotResult } {
-  const s = start ?? E.createGame(seed);
+export function runBot(seed: number, days = 720, log?: (line: string) => void, start?: GameState, until?: (s: GameState) => boolean, difficulty: Difficulty = 'normal'): { s: GameState; result: BotResult } {
+  const s = start ?? E.createGame(seed, difficulty);
   const fresh = !start;
   const stageDays: Partial<Record<StageId, number>> = { 1: 1 };
   if (fresh) {
@@ -302,6 +324,7 @@ export function runBot(seed: number, days = 720, log?: (line: string) => void, s
     if (!s.brands[0].store.launched) E.launchStore(s, 1);
     if (s.stage === 1 && !s.batchPacking) while (s.backlog.length && !E.handPack(s));
     if (s.stage <= 2 && s.backlog.reduce((a, b) => a + b.orders, 0) > fulfillmentCapacity(s).total && s.cash > 300) E.callFriend(s);
+    founder(s);
     staff(s);
     layout(s);
     growth(s);
@@ -349,9 +372,12 @@ export function naiveBot(seed: number, days = 60): BotResult {
   for (const m of ['hero', 'description', 'checkout'] as ModuleId[]) E.setModule(s, 1, m, 1);
   E.toggleBenefit(s, 'dogbowl', 'dishwasher');
   E.setBrandName(s, 1, 'Bowl Co');
-  E.launchStore(s, 1);
+  E.buySkill(s, 'adsBasics');
+  E.completeStoreBuild(s, 1, 2);
   while (s.day < days && s.status === 'playing') {
     const p = s.products.dogbowl;
+    if (!hasSkill(s, 'adsBasics')) E.studySkill(s, 'adsBasics');
+    if (!s.brands[0].store.launched) E.launchStore(s, 1);
     if (p.inventory.onHand && !Object.values(p.ads).some((c) => c.active)) for (const c of Object.values(p.ads)) E.setAdCell(s, 'dogbowl', c.key, { active: true, budget: 25 });
     while (s.backlog.length && !s.batchPacking && !E.handPack(s));
     resolveAll(s);

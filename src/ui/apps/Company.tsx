@@ -7,6 +7,7 @@ import type { AmbitionId, CategoryId, StageId } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle, Meter, Options } from '../bits';
 import { money } from '../format';
+import { Icon, withIcons } from '../icons';
 
 export function Company() {
   const game = useGame((s) => s.game);
@@ -41,7 +42,7 @@ export function Company() {
             <div key={c.label} style={{ margin: '8px 0' }}>
               <div className="row between tiny">
                 <span>
-                  {c.done ? '✅' : '⬜'} {c.label}
+                  <Icon name={c.done ? 'checkboxOn' : 'checkbox'} color={c.done ? '#1f9d55' : undefined} /> {c.label}
                 </span>
                 <b>{c.value}</b>
               </div>
@@ -62,13 +63,13 @@ export function Company() {
             );
           })()}
           <button className="primary" disabled={!ready} onClick={() => act(advanceStage)}>
-            🚚 Move to the {space.name.toLowerCase()} ({money(space.deposit)})
+            <Icon name="truck" /> Move to the {space.name.toLowerCase()} ({money(space.deposit)})
           </button>
           <p className="tiny muted">Growing is a choice. A small premium brand with loyal customers is a real strategy too.</p>
         </div>
       )}
 
-      <h3>🎯 Ambition</h3>
+      <h3><Icon name="bullseye" /> Ambition</h3>
       {game.stage < 2 ? (
         <p className="tiny muted">Once you’re a growing brand, choose what kind of company you want to build.</p>
       ) : (
@@ -80,14 +81,14 @@ export function Company() {
             return (
               <div key={id} className={`card ${chosen ? 'selected' : ''}`}>
                 <h4>
-                  {a.emoji} {a.name} {done && <span className="pill good">achieved</span>}
+                  {withIcons(a.emoji)} {a.name} {done && <span className="pill good">achieved</span>}
                 </h4>
                 <p>{a.desc}</p>
                 {chosen ? (
                   ambitionChecks(game, id).map((c) => (
                     <div key={c.label}>
                       <div className="row between tiny">
-                        <span>{c.done ? '✅' : '⬜'} {c.label}</span>
+                        <span><Icon name={c.done ? 'checkboxOn' : 'checkbox'} color={c.done ? '#1f9d55' : undefined} /> {c.label}</span>
                         <b>{c.value}</b>
                       </div>
                       <Meter value={Math.min(1, c.progress)} />
@@ -104,7 +105,7 @@ export function Company() {
         </div>
       )}
 
-      <h3>📊 Market share</h3>
+      <h3><Icon name="chartBar" /> Market share</h3>
       <table className="data">
         <tbody>
           {(Object.keys(CATEGORIES) as CategoryId[]).map((cat) => {
@@ -114,7 +115,7 @@ export function Company() {
             return (
               <tr key={cat}>
                 <td>
-                  {c.emoji} {c.name}
+                  {withIcons(c.emoji)} {c.name}
                 </td>
                 <td style={{ width: 200 }}>
                   <Meter value={share / c.topCompetitor.share} />
@@ -146,7 +147,7 @@ function Lab() {
   const running = game.lab.find((l) => !l.done);
   return (
     <>
-      <h3>✏️ Product Lab</h3>
+      <h3><Icon name="edit" /> Product Lab</h3>
       <p className="tiny muted">Design an exclusive product nobody can copy: fewer competitors, higher prices, immune to copycats. {game.team.designer.count ? `${game.team.designer.count} designer(s) speed things up.` : 'Hire a product designer to speed it up.'}</p>
       {running ? (
         <div className="callout">
@@ -192,7 +193,7 @@ function Brands() {
   const [name, setName] = useState('');
   return (
     <>
-      <h3>🎨 Brands</h3>
+      <h3><Icon name="colors" /> Brands</h3>
       <table className="data">
         <tbody>
           {game.brands.map((b, i) => {
@@ -231,7 +232,7 @@ function World() {
   const act = useGame((s) => s.act);
   return (
     <>
-      <h3>🌍 International</h3>
+      <h3><Icon name="map" /> International</h3>
       <p className="tiny muted">Foreign markets add demand across all channels. Shipping from home is slow and converts at ~55%; a local warehouse fixes that but costs rent. Current foreign demand: +{Math.round(intlFactor(game) * 100)}%.</p>
       <table className="data">
         <tbody>

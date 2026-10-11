@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AMBITIONS, STARTING_CASH, SUPPLIERS } from '../sim/data';
+import { AMBITIONS, DIFFICULTY, STARTING_CASH, SUPPLIERS } from '../sim/data';
 import { averageRating, brandOf, def, profitOf } from '../sim/economics';
-import { compositionScore, handPack, inspectSample, MILESTONE_LABELS, MILESTONE_PICS, nextHandPack, resolveEvent, sampleNote, scorePhoto, setFlag, takePhoto } from '../sim/engine';
+import { compositionScore, handPack, inspectSample, MILESTONE_LABELS, MILESTONE_PICS, nextHandPack, resolveEvent, sampleNote, scorePhoto, setDifficulty, setFlag, takePhoto } from '../sim/engine';
 import { ProductImage, ProductShot } from './photos';
 import { MarketScan } from './MarketScan';
 import { DigReveal, Investigate } from './Discovery';
-import type { MilestoneId, PhotoChoice, SupplierId } from '../sim/types';
+import { CreativeResearch, StoreBuilder } from './Builders';
+import { Phone } from './Phone';
+import type { Difficulty, MilestoneId, PhotoChoice, SupplierId } from '../sim/types';
 import { sfx } from '../state/sound';
 import { useGame } from '../state/store';
 import { Options } from './bits';
 import { money, stars } from './format';
+import { Icon, withIcons } from './icons';
 
 export function Modals() {
   const modal = useGame((s) => s.modal);
@@ -40,6 +43,12 @@ export function Modals() {
       return <DigReveal key={modal.productId} productId={modal.productId} />;
     case 'quiz':
       return <Investigate key={modal.productId} productId={modal.productId} />;
+    case 'build':
+      return <StoreBuilder key={modal.brandId} brandId={modal.brandId} />;
+    case 'creative':
+      return <CreativeResearch key={modal.productId} productId={modal.productId} />;
+    case 'phone':
+      return <Phone />;
   }
 }
 
@@ -53,22 +62,91 @@ function Shell({ children, center = false, onClose, wide = false }: { children: 
   );
 }
 
+const STORY_PAGES = [
+  {
+    icon: 'teach' as const,
+    title: 'Spring semester, year two',
+    body: (
+      <>
+        <p>You walked out of a lecture on supply chains and never went back. The textbook said businesses were built by people with MBAs. You think they’re built by people who start.</p>
+        <p>
+          Dad called it <i>the biggest mistake of your life</i>. He hasn’t called since.
+        </p>
+      </>
+    ),
+  },
+  {
+    icon: 'heart' as const,
+    title: 'Four thousand dollars',
+    body: (
+      <>
+        <p>
+          Mom quietly moved <b>$2,000</b> out of her savings. Sam, your best friend since middle school, handed over <b>$1,000</b> of his car fund. Maya, your old roommate, sent <b>$1,000</b> with a text: “founder discount for life.”
+        </p>
+        <p>
+          That’s <b>{money(STARTING_CASH)}</b>, a laptop, a studio apartment and a cat called Invoice. Turn it into a real business, pay them back, and prove dropping out wasn’t a mistake.
+        </p>
+      </>
+    ),
+  },
+];
+
 function Intro() {
+  const game = useGame((s) => s.game);
   const act = useGame((s) => s.act);
+  const [page, setPage] = useState(0);
+  const last = STORY_PAGES.length + 1;
   return (
-    <Shell center>
-      <div className="huge">📦</div>
-      <h2>Unboxed</h2>
-      <p>
-        You just quit a job you didn’t love. You have a laptop, <b>{money(STARTING_CASH)}</b> in savings, a corner of a studio apartment, and a cat called Invoice.
-      </p>
-      <p>
-        Start by digging for product ideas, investigate each market, shortlist the best, and pick one. First goal: launch it and make your <b>first profitable reorder</b>. After that, the road runs from your kitchen table to a garage, a warehouse, an HQ, and maybe a global company. Or a small brand people love. Your call.
-      </p>
-      <p className="tiny muted">Rent is $900 every 30 days. Time only moves when you press ▶ or skip ahead.</p>
-      <button className="primary" onClick={() => act(setFlag, 'introSeen')}>
-        Open the laptop
-      </button>
+    <Shell center wide>
+      {page < STORY_PAGES.length && (
+        <>
+          <div className="huge">
+            <Icon name={STORY_PAGES[page].icon} />
+          </div>
+          <h2>{STORY_PAGES[page].title}</h2>
+          <div style={{ textAlign: 'left' }}>{STORY_PAGES[page].body}</div>
+          <button className="primary" onClick={() => setPage(page + 1)}>
+            Next
+          </button>
+        </>
+      )}
+      {page === STORY_PAGES.length && (
+        <>
+          <h2>How tough is the market?</h2>
+          <div className="diff-grid">
+            {(Object.keys(DIFFICULTY) as Difficulty[]).map((d) => (
+              <button key={d} className={`diff ${game.difficulty === d ? 'on' : ''}`} onClick={() => act(setDifficulty, d)}>
+                <b>{DIFFICULTY[d].name}</b>
+                <span className="tiny">{DIFFICULTY[d].blurb}</span>
+              </button>
+            ))}
+          </div>
+          <p className="tiny muted">On Normal and Hard, every product’s ad costs, unit costs and competition drift the longer you sell it. Keep finding new products.</p>
+          <button className="primary" onClick={() => setPage(last)}>
+            Continue
+          </button>
+        </>
+      )}
+      {page === last && (
+        <>
+          <div className="huge">
+            <Icon name="laptop" />
+          </div>
+          <h2>Day one</h2>
+          <div style={{ textAlign: 'left' }}>
+            <p>
+              You don’t know how any of this works yet. Start in <b>SkillUp</b>: a product research tool, then the ads course. Then <b>dig for product ideas</b>, investigate each market, and pick one.
+            </p>
+            <p>
+              First goal: launch it and make your <b>first profitable reorder</b>. Watch your phone: the people who backed you will check in. And watch your energy: you can’t work 10-hour days forever.
+            </p>
+          </div>
+          <p className="tiny muted">Rent is $900 every 30 days. Time only moves when you press play or skip ahead.</p>
+          <button className="primary" onClick={() => act(setFlag, 'introSeen')}>
+            Open the laptop
+          </button>
+        </>
+      )}
     </Shell>
   );
 }
@@ -86,7 +164,7 @@ function Unbox({ productId, supplierId }: { productId: string; supplierId: Suppl
 
   return (
     <Shell onClose={() => setModal(null)}>
-      <h2>📦 {d.name} sample from {sup.company}</h2>
+      <h2><Icon name="archive" /> {d.name} sample from {sup.company}</h2>
       <p className="muted">Drag to turn it around. Look closely before you trust the listing.</p>
       <div
         className="inspect"
@@ -110,7 +188,7 @@ function Unbox({ productId, supplierId }: { productId: string; supplierId: Suppl
             if (!act(inspectSample, productId, supplierId)) setInspected(true);
           }}
         >
-          🔍 Inspect closely (30 min)
+          <Icon name="search" /> Inspect closely (30 min)
         </button>
       ) : (
         <>
@@ -123,7 +201,7 @@ function Unbox({ productId, supplierId }: { productId: string; supplierId: Suppl
               <span>Your verdict</span>
               <b className={realStars < sup.qualityStars ? 'bad-text' : 'good-text'}>{stars(realStars)}</b>
             </div>
-            <p style={{ margin: '8px 0 0' }}>📝 {sampleNote(game, productId, supplierId)}</p>
+            <p style={{ margin: '8px 0 0' }}><Icon name="note" /> {sampleNote(game, productId, supplierId)}</p>
           </div>
           <div className="row" style={{ marginTop: 12 }}>
             <button className="primary" onClick={() => setModal(null)}>
@@ -155,15 +233,15 @@ function Photo({ productId }: { productId: string }) {
 
   return (
     <Shell onClose={() => setModal(null)} wide>
-      <h2>📸 Photo shoot: {d.name}</h2>
-      <p className="muted tiny">💡 {d.photoTip} Drag the product to frame it, zoom with the slider. The grid shows the rule of thirds.</p>
+      <h2><Icon name="camera" /> Photo shoot: {d.name}</h2>
+      <p className="muted tiny"><Icon name="lightbulb" /> {d.photoTip} Drag the product to frame it, zoom with the slider. The grid shows the rule of thirds.</p>
       <div className="shot-frame" onPointerDown={(e) => { setDrag(true); move(e); }} onPointerUp={() => setDrag(false)} onPointerLeave={() => setDrag(false)} onPointerMove={move}>
         <ProductShot game={game} pid={productId} choice={c} height={260}>
           <div className="thirds" />
         </ProductShot>
       </div>
       <div className="row" style={{ margin: '8px 0' }}>
-        <span className="tiny">🔍 Zoom</span>
+        <span className="tiny"><Icon name="search" /> Zoom</span>
         <input type="range" min={60} max={200} value={Math.round((c.zoom ?? 1) * 100)} onChange={(e) => setC((prev) => ({ ...prev, zoom: +e.target.value / 100 }))} style={{ maxWidth: 220 }} />
         <span className={`pill ${comp > 0.65 ? 'good' : comp < 0.35 ? 'bad' : ''}`}>Composition {Math.round(comp * 100)}%</span>
       </div>
@@ -189,7 +267,7 @@ function Photo({ productId }: { productId: string }) {
             }
           }}
         >
-          📷 Take photo (2h)
+          <Icon name="camera" /> Take photo (2h)
         </button>
         <button className="ghost" onClick={() => setModal(null)}>
           Done
@@ -211,7 +289,7 @@ function Pack() {
   if (!order) {
     return (
       <Shell center onClose={() => setModal(null)}>
-        <div className="huge">✅</div>
+        <div className="huge"><Icon name="check" /></div>
         <h2>All packed!</h2>
         <p className="muted">{packed ? `You packed ${packed} order${packed === 1 ? '' : 's'}.` : 'Nothing waiting.'} Invoice the cat approves.</p>
         <button className="primary" onClick={() => setModal(null)}>
@@ -222,7 +300,7 @@ function Pack() {
   }
   const d = def(game, order.productId);
   const visual =
-    step === 0 ? '🗞️' : step >= steps.length ? '📦✅' : steps[step - 1] === 'Add product' ? <span className="row" style={{ gap: 10 }}>📦<ProductImage game={game} pid={order.productId} size={90} /></span> : steps[step - 1] === 'Thank-you card' ? '📦💌' : '📦';
+    step === 0 ? <Icon name="article" /> : step >= steps.length ? <><Icon name="archive" /><Icon name="check" color="#1f9d55" /></> : steps[step - 1] === 'Add product' ? <span className="row" style={{ gap: 10 }}><Icon name="archive" /><ProductImage game={game} pid={order.productId} size={90} /></span> : steps[step - 1] === 'Thank-you card' ? <><Icon name="archive" /><Icon name="mailHeart" /></> : <Icon name="archive" />;
 
   const advance = () => {
     if (step >= steps.length) return;
@@ -295,9 +373,9 @@ function Milestone({ text }: { text: string }) {
     <>
       <Confetti />
       <Shell center onClose={() => setModal(null)}>
-        <div className="huge">{id ? MILESTONE_PICS[id] : '📸'}</div>
+        <div className="huge">{id ? withIcons(MILESTONE_PICS[id]) : <Icon name="camera" />}</div>
         <p className="tiny muted">MILESTONE</p>
-        <h2>{text}</h2>
+        <h2>{withIcons(text)}</h2>
         <p className="muted">{moving ? 'New space, new possibilities. Check the Company app for what just unlocked.' : 'A new polaroid for the corkboard.'}</p>
         <div className="row" style={{ justifyContent: 'center' }}>
           <button className="primary" onClick={() => setModal(null)}>
@@ -327,7 +405,7 @@ function Report() {
   const growth = prev && prev.pl.revenue ? (r.pl.revenue - prev.pl.revenue) / prev.pl.revenue : null;
   return (
     <Shell onClose={() => setModal(null)}>
-      <h2>📊 Month {r.month} in review</h2>
+      <h2><Icon name="chartBar" /> Month {r.month} in review</h2>
       <div className="funnel">
         <div>
           <b>{money(r.pl.revenue)}</b>revenue{growth !== null && <div className={`tiny ${growth >= 0 ? 'good-text' : 'bad-text'}`}>{growth >= 0 ? '▲' : '▼'} {Math.abs(Math.round(growth * 100))}%</div>}
@@ -358,9 +436,9 @@ function Crisis() {
   const ev = game.events.find((e) => e.blocking)!;
   return (
     <Shell center>
-      <div className="huge">😬</div>
-      <h2>{ev.title}</h2>
-      <p>{ev.body}</p>
+      <div className="huge"><Icon name="sad" /></div>
+      <h2>{withIcons(ev.title)}</h2>
+      <p>{withIcons(ev.body)}</p>
       <div className="choices" style={{ justifyContent: 'center' }}>
         {ev.choices.map((c, i) => (
           <button key={c.id} className={i === 0 ? 'primary' : ''} onClick={() => act(resolveEvent, ev.id, c.id)}>
@@ -410,7 +488,7 @@ function Won() {
     <>
       <Confetti />
       <Shell center>
-        <div className="huge">🎉</div>
+        <div className="huge"><Icon name="trophy" /></div>
         <h2>First profitable reorder!</h2>
         <p>You restocked from profit and still have your savings. The kitchen-table business works.</p>
         <p>
@@ -433,7 +511,7 @@ function Ambition({ id }: { id: keyof typeof AMBITIONS }) {
     <>
       <Confetti />
       <Shell center>
-        <div className="huge">{a.emoji}</div>
+        <div className="huge">{withIcons(a.emoji)}</div>
         <p className="tiny muted">AMBITION ACHIEVED</p>
         <h2>{a.name}</h2>
         <p>{a.desc}</p>
@@ -458,13 +536,13 @@ function Lost() {
   const locked = Object.values(game.products).reduce((a, p) => a + p.inventory.costTotal, 0) + game.pos.filter((p) => p.status !== 'arrived').reduce((a, p) => a + p.totalCost, 0);
   return (
     <Shell center>
-      <div className="huge">📉</div>
+      <div className="huge"><Icon name="trendingDown" /></div>
       <h2>The business ran out of cash</h2>
       <p>It happens to real founders all the time. Here’s what the numbers say:</p>
       <Recap />
       <div className="callout" style={{ textAlign: 'left' }}>
-        {locked > 1000 && <p style={{ margin: '0 0 6px' }}>📦 {money(locked)} was locked up in stock when the cash ran out.</p>}
-        <p style={{ margin: 0 }}>💡 Watch the Cash River projection in Finance. It warns you before the money runs out.</p>
+        {locked > 1000 && <p style={{ margin: '0 0 6px' }}><Icon name="archive" /> {money(locked)} was locked up in stock when the cash ran out.</p>}
+        <p style={{ margin: 0 }}><Icon name="lightbulb" /> Watch the Cash River projection in Finance. It warns you before the money runs out.</p>
       </div>
       <button className="primary" style={{ marginTop: 12 }} onClick={newGame}>
         Try again
@@ -481,5 +559,5 @@ export function Toast() {
     const t = setTimeout(clear, 2800);
     return () => clearTimeout(t);
   }, [toast, clear]);
-  return toast ? <div className="toast">{toast}</div> : null;
+  return toast ? <div className="toast">{withIcons(toast)}</div> : null;
 }

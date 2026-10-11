@@ -2,6 +2,7 @@ import { def, liveProducts, trust } from '../sim/economics';
 import { researchLevel } from '../sim/engine';
 import type { TabId } from '../state/store';
 import { useGame } from '../state/store';
+import { Icon } from './icons';
 
 type Grade = 'A' | 'B' | 'C' | 'D' | null;
 const G: Grade[] = ['D', 'C', 'B', 'A'];
@@ -64,12 +65,12 @@ export function LaunchChecklist() {
   return (
     <div className="checklist">
       <div className="row between">
-        <b>🚀 Launch checklist</b>
+        <b><Icon name="checklist" /> Launch checklist</b>
         {overall && <span className={`grade g${overall}`}>{overall}</span>}
       </div>
       {steps.map((st) => (
         <button key={st.label} className="check" onClick={() => setTab(st.tab)} title={st.hint}>
-          <span>{st.done ? '✅' : '⬜'}</span>
+          <span><Icon name={st.done ? 'checkboxOn' : 'checkbox'} color={st.done ? '#1f9d55' : undefined} /></span>
           <span className="grow">{st.label}</span>
           {st.grade && <span className={`grade g${st.grade}`}>{st.grade}</span>}
         </button>

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Icon } from './icons';
 
 export function Pips({ n, max = 5, bad = false }: { n: number; max?: number; bad?: boolean }) {
   return (
@@ -62,7 +63,7 @@ export function Options<T extends string | number>({
 export function Lock({ stage, what }: { stage: number; what: string }) {
   return (
     <div className="callout" style={{ textAlign: 'center', padding: 30 }}>
-      <div style={{ fontSize: 34 }}>🔒</div>
+      <div style={{ fontSize: 34 }}><Icon name="lock" /></div>
       <b>{what}</b>
       <div className="muted tiny">Unlocks at stage {stage}. See the Company app for what it takes.</div>
     </div>

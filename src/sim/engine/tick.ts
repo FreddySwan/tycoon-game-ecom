@@ -1,38 +1,6 @@
 import { cpmSeason, isBigBazaarlyDays } from '../calendar';
-import { CHANNELS, HOURS, MARKETPLACES, OVERHEAD_RATE, PAYROLL_EVERY, ROLE_TEAM, SUPPLIERS, THIRD_PARTY } from '../data';
-import {
-  averageRating,
-  avgDailyOrders,
-  brandOf,
-  bundlePrice,
-  bundleShare,
-  cellForecast,
-  channelFee,
-  channelPrice,
-  creativeUnlocked,
-  def,
-  effectivePrice,
-  fulfillmentCapacity,
-  intlFactor,
-  intlShare,
-  liveProducts,
-  mod,
-  payrollByRole,
-  payrollMonthly,
-  priceFactor,
-  profitOf,
-  reviewFactor,
-  round2,
-  searchForecast,
-  siteCVR,
-  stockQuality,
-  storageCapacity,
-  storageUsed,
-  supportCapacity,
-  trailing,
-  trendMult,
-  copycatMult,
-} from '../economics';
+import { CHANNELS, MARKETPLACES, OVERHEAD_RATE, PAYROLL_EVERY, ROLE_TEAM, SUPPLIERS, THIRD_PARTY } from '../data';
+import { averageRating, avgDailyOrders, brandOf, bundlePrice, bundleShare, cellForecast, channelFee, channelPrice, copycatMult, creativeUnlocked, def, effectivePrice, fulfillmentCapacity, intlFactor, intlShare, liveProducts, marketOf, mod, packHours, payrollByRole, payrollMonthly, priceFactor, profitOf, reviewFactor, round2, searchForecast, siteCVR, stockQuality, storageCapacity, storageUsed, supportCapacity, trailing, trendMult } from '../economics';
 import { binomial, chance, poisson, rand } from '../rng';
 import type { BacklogBucket, ChannelId, DailyRecord, GameState, OrderSource, RoleId } from '../types';
 import { adStat, book, countSource, milestone, MILESTONE_LABELS, notify, randomCustomer, slice, today } from './core';
@@ -43,6 +11,8 @@ import { leadPass, shipFromBucket } from './ops';
 import { expireCards, processDeliveries, processTickets } from './reviews';
 import { revealDue, runReorders, settleContracts } from './sourcing';
 import { adminTopUp } from './admin';
+import { marketDrift } from './market';
+import { storyDay } from './story';
 import { onStore } from './storefront';
 
 export function isBlocked(s: GameState): boolean {
@@ -73,7 +43,7 @@ function endOfDayFulfillment(s: GameState): void {
     if (!cap.thirdParty) {
       const fromFounder = Math.min(n, founderLeft);
       founderLeft -= fromFounder;
-      s.hoursUsed += fromFounder * HOURS.handPack;
+      s.hoursUsed += fromFounder * packHours(s);
     }
     budget -= n;
     shipFromBucket(s, b, n);
@@ -365,7 +335,7 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
     const visits = c.traffic * d.bars.demand * trend * Math.pow(l.rank, 1.4) * intl * copycatMult(s, pid) * (promo ? 2 : 1) * (bbd ? 2.5 : 1);
     let sponsoredClicks = 0;
     if (l.sponsored > 0 && hasStock) {
-      const cpc = (0.5 + 0.18 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost');
+      const cpc = (0.5 + 0.18 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost') * marketOf(s, pid).ad;
       // Sponsored slots only get so many shoppers: about a quarter of the product's search traffic there.
       sponsoredClicks = Math.round(Math.min(l.sponsored / cpc, c.traffic * d.bars.demand * 0.25 * trend * intl));
       const spent = round2(sponsoredClicks * cpc);
@@ -597,6 +567,7 @@ export function advanceDay(s: GameState): void {
   endOfDayFulfillment(s);
   const closing = today(s);
   closing.cash = s.cash;
+  const worked = s.hoursUsed;
   s.hoursUsed = 0;
   s.extraHours = 0;
 
@@ -662,6 +633,8 @@ export function advanceDay(s: GameState): void {
   if (s.counters.revenueLifetime >= 1e6) milestone(s, 'revenue_1m');
 
   // Slow drifts
+  marketDrift(s);
+  storyDay(s, worked);
   s.discountFatigue = liveProducts(s).some((id) => s.products[id].discountPct > 0) ? Math.min(0.3, s.discountFatigue + 0.02) : Math.max(0, s.discountFatigue - 0.01);
   for (const p of Object.values(s.products)) p.copycat = Math.max(0, p.copycat - 0.0015);
   for (const b of s.brands) {

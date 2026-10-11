@@ -4,6 +4,7 @@ import { fire, giveRaise, hire, promoteToLead, RECRUIT_FEE, seatLimit, setShifts
 import { useGame } from '../../state/store';
 import { AppTitle, Meter } from '../bits';
 import { money } from '../format';
+import { Icon, withIcons } from '../icons';
 
 export function Team() {
   const game = useGame((s) => s.game);
@@ -28,7 +29,7 @@ export function Team() {
           {game.people.map((p) => (
             <div key={p.name + p.role} className="card">
               <div className="row between">
-                <span className="big-emoji">{ROLES[p.role].emoji}</span>
+                <span className="big-emoji">{withIcons(ROLES[p.role].emoji)}</span>
                 {p.promoted && <span className="pill good">promoted</span>}
               </div>
               <h4>{p.name}</h4>
@@ -59,7 +60,7 @@ export function Team() {
               <tr key={r}>
                 <td>
                   <b>
-                    {d.emoji} {d.name}
+                    {withIcons(d.emoji)} {d.name}
                   </b>
                   <div className="tiny muted">{d.desc}</div>
                 </td>
@@ -80,7 +81,7 @@ export function Team() {
                       −
                     </button>
                     <button className="small ghost" disabled={!t.count} onClick={() => act(giveRaise, r)} title="+10% wage, +20 morale (every 60 days)">
-                      💸
+                      <Icon name="money" />
                     </button>
                   </div>
                 </td>
@@ -92,7 +93,7 @@ export function Team() {
       {game.stage >= 3 && (
         <div className="row" style={{ marginTop: 12 }}>
           {game.people.some((p) => p.role === 'packer' && p.name === 'Jordan') && !game.team.lead.count && (
-            <button onClick={() => act(promoteToLead)}>🦺 Promote Jordan to warehouse lead</button>
+            <button onClick={() => act(promoteToLead)}><Icon name="humanUp" /> Promote Jordan to warehouse lead</button>
           )}
           <span>Shifts:</span>
           <button className={game.shifts === 1 ? 'primary small' : 'small'} onClick={() => act(setShifts, 1)}>

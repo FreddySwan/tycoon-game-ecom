@@ -4,10 +4,11 @@ import { ADMIN_CASH_FLOOR, adminAddCash, adminForceStage, adminRevealAll, adminS
 import type { StageId } from '../sim/types';
 import { useGame } from '../state/store';
 import { money } from './format';
+import { Icon } from './icons';
 
 const STAGE_IDS: StageId[] = [1, 2, 3, 4, 5];
 
-/** Testing cheats: money, hours, time skips and stage jumps. Toggle from the ☰ menu or open the game with ?admin. */
+/** Testing cheats: money, hours, time skips and stage jumps. Toggle from the menu or open the game with ?admin. */
 export function AdminPanel() {
   const admin = useGame((s) => s.admin);
   const game = useGame((s) => s.game);
@@ -39,20 +40,20 @@ export function AdminPanel() {
   if (!open)
     return (
       <button className="admin-fab" onClick={() => setOpen(true)} title="Admin mode">
-        🛠
+        <Icon name="debug" />
       </button>
     );
 
   return (
     <div className="admin-panel">
       <div className="row between">
-        <b>🛠 Admin mode</b>
+        <b><Icon name="debug" /> Admin mode</b>
         <span className="row" style={{ gap: 4 }}>
           <button className="small ghost" onClick={() => setOpen(false)} title="Minimize">
             –
           </button>
           <button className="small ghost" onClick={toggleAdmin} title="Turn admin mode off">
-            ✕
+            <Icon name="close" />
           </button>
         </span>
       </div>
