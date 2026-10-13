@@ -143,12 +143,12 @@ export const CHANNELS: Record<ChannelId, ChannelDef> = {
     id: 'crafthaus',
     name: 'Crafthaus',
     emoji: '🧵',
-    desc: 'A smaller, loyal market for premium goods. Rejects cheap-looking products.',
+    desc: 'A smaller, loyal market for premium goods. Shoppers happily pay ~30% more for quality, but reject cheap-looking products.',
     unlockStage: 4,
     feePct: 0.09,
     feeFlat: 0.2,
     payoutEvery: 14,
-    traffic: 60,
+    traffic: 140,
     cvrMult: 2.1,
     joinCost: 300,
     monthlyFee: 25,
@@ -194,7 +194,7 @@ export const REGION_ORDER: RegionId[] = ['eu', 'uk', 'jp', 'au'];
 
 export const ROLES: Record<RoleId, RoleDef> = {
   packer: { id: 'packer', name: 'Packer', emoji: '📦', wage: 2300, unlockStage: 2, seat: 'floor', desc: 'Packs ~35 orders a day at a packing station.', firstName: 'Jordan' },
-  support: { id: 'support', name: 'Support agent', emoji: '🎧', wage: 2200, unlockStage: 2, seat: 'office', desc: 'Answers ~60 customer tickets a day following your policy.', firstName: 'Sam Rivera' },
+  support: { id: 'support', name: 'Support agent', emoji: '🎧', wage: 2200, unlockStage: 2, seat: 'office', desc: 'Answers ~60 customer tickets a day following your policy.', firstName: 'Dana Rivera' },
   marketer: { id: 'marketer', name: 'Growth marketer', emoji: '📈', wage: 4200, unlockStage: 2, seat: 'office', desc: 'Runs your ad tests weekly: pauses losers, scales winners. +10% ad click rate.', firstName: 'Rosa Lind' },
   buyer: { id: 'buyer', name: 'Buyer', emoji: '🧾', wage: 3800, unlockStage: 3, seat: 'office', desc: 'Runs automatic reorder rules and negotiates a little harder.', firstName: 'Malik Osei' },
   lead: { id: 'lead', name: 'Warehouse lead', emoji: '🦺', wage: 3400, unlockStage: 3, seat: 'floor', desc: '+15% packing speed per 15 packers. Required for a second shift.', firstName: 'Jordan' },

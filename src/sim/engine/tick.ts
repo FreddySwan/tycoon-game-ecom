@@ -1,6 +1,6 @@
 import { cpmSeason, isBigBazaarlyDays } from '../calendar';
-import { CHANNELS, MARKETPLACES, OVERHEAD_RATE, PAYROLL_EVERY, ROLE_TEAM, SUPPLIERS, THIRD_PARTY } from '../data';
-import { averageRating, avgDailyOrders, brandOf, bundlePrice, bundleShare, cellForecast, channelFee, channelPrice, copycatMult, creativeUnlocked, def, effectivePrice, fulfillmentCapacity, intlFactor, intlShare, liveProducts, marketOf, mod, packHours, payrollByRole, payrollMonthly, priceFactor, profitOf, reviewFactor, round2, searchForecast, siteCVR, stockQuality, storageCapacity, storageUsed, supportCapacity, trailing, trendMult } from '../economics';
+import { CHANNELS, INCOME_TAX, MARKETPLACES, OVERHEAD_RATE, PAYROLL_EVERY, ROLE_TEAM, SUPPLIERS, THIRD_PARTY } from '../data';
+import { averageRating, avgDailyOrders, brandOf, bundlePrice, bundleShare, cellForecast, channelFee, channelPrice, copycatMult, creativeUnlocked, def, effectivePrice, fulfillmentCapacity, intlFactor, intlShare, liveProducts, listingVisibility, rivalAdMult, marketOf, mod, packHours, payrollByRole, payrollMonthly, priceFactor, profitOf, reviewFactor, round2, searchForecast, siteCVR, stockQuality, storageCapacity, storageUsed, supportCapacity, taxEstimate, trailing, trendMult } from '../economics';
 import { binomial, chance, poisson, rand } from '../rng';
 import type { BacklogBucket, ChannelId, DailyRecord, GameState, OrderSource, RoleId } from '../types';
 import { adStat, book, countSource, milestone, MILESTONE_LABELS, notify, randomCustomer, slice, today } from './core';
@@ -11,7 +11,14 @@ import { leadPass, shipFromBucket } from './ops';
 import { expireCards, processDeliveries, processTickets } from './reviews';
 import { revealDue, runReorders, settleContracts } from './sourcing';
 import { adminTopUp } from './admin';
+import { compactRecord, rollupHistory } from './history';
+import { DEFAULT_PAUSES, type PauseSettings, pausesFor } from './notices';
 import { marketDrift } from './market';
+import { rivalPromoTick, rivalWeek } from './rivals';
+import { focusWeek } from './focus';
+import { campaignDay, fundingDay } from './growth';
+import { peopleDay } from './people';
+import { checkEnding } from './endings';
 import { storyDay } from './story';
 import { onStore } from './storefront';
 
@@ -183,6 +190,13 @@ function billsAndPayouts(s: GameState): void {
       notify(s, 'cash', `Payroll: −$${Math.round(pay).toLocaleString()}.`);
     }
   }
+  if (s.day % 90 === 0 && s.stage >= 2) {
+    const tax = round2(taxEstimate(s));
+    if (tax > 0) {
+      book(s, 'tax', tax, { sub: 'Income tax' });
+      notify(s, 'cash', `Quarterly income tax: −$${Math.round(tax).toLocaleString()} (${Math.round(INCOME_TAX * 100)}% of the quarter’s profit).`);
+    }
+  }
   if (s.day % 30 === 0 && OVERHEAD_RATE[s.stage] > 0) {
     const overhead = round2(trailing(s, 30).revenue * OVERHEAD_RATE[s.stage]);
     if (overhead > 0) {
@@ -335,7 +349,7 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
     const visits = c.traffic * d.bars.demand * trend * Math.pow(l.rank, 1.4) * intl * copycatMult(s, pid) * (promo ? 2 : 1) * (bbd ? 2.5 : 1);
     let sponsoredClicks = 0;
     if (l.sponsored > 0 && hasStock) {
-      const cpc = (0.5 + 0.18 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost') * marketOf(s, pid).ad;
+      const cpc = (0.5 + 0.18 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost') * marketOf(s, pid).ad * rivalAdMult(s, d.category);
       // Sponsored slots only get so many shoppers: about a quarter of the product's search traffic there.
       sponsoredClicks = Math.round(Math.min(l.sponsored / cpc, c.traffic * d.bars.demand * 0.25 * trend * intl));
       const spent = round2(sponsoredClicks * cpc);
@@ -357,7 +371,8 @@ function productDemand(s: GameState, pid: string, rec: DailyRecord): Demand[] {
     if (l.recent.length > 7) l.recent.shift();
     // Ranking: sales velocity, rating and stock. Bazaarly punishes stock-outs hard.
     const velocity = l.recent.reduce((a, x) => a + x, 0) / Math.max(1, l.recent.length);
-    const target = Math.min(1, 0.06 + velocity / (d.bars.demand * 35)) * (averageRating(s, pid) >= 4.3 || p.reviews.count < 5 ? 1 : 0.7) * (l.sponsored > 0 ? 1.15 : 1);
+    // Marketplaces favour sellers who keep advertising: visibility tracks sponsored spend as a share of sales.
+    const target = Math.min(1, 0.06 + velocity / (d.bars.demand * 35)) * (averageRating(s, pid) >= 4.3 || p.reviews.count < 5 ? 1 : 0.7) * (MARKETPLACES.includes(ch) ? listingVisibility(s, pid, ch).mult : 1);
     l.rank = hasStock ? Math.max(0.02, Math.min(1, l.rank + (target - l.rank) * 0.08 + (promo ? 0.01 : 0))) : l.rank * (ch === 'bazaarly' ? 0.85 : 0.95);
     if (organicOrders) out.push({ channel: ch, source: ch === 'loopshop' ? 'organic' : 'marketplace', orders: organicOrders });
     if (sponsoredOrders) out.push({ channel: ch, source: 'sponsored', orders: sponsoredOrders });
@@ -378,6 +393,7 @@ function brandRepeatDemand(s: GameState): Map<string, Demand[]> {
     const flows = brand.email.flows;
     const rate =
       0.0011 *
+      mod(s, 'repeat') *
       repeatability *
       (rating >= 4.5 ? 1.2 : rating >= 4 ? 1 : 0.5) *
       (flows.postPurchase ? 1.35 : 1) *
@@ -567,6 +583,7 @@ export function advanceDay(s: GameState): void {
   endOfDayFulfillment(s);
   const closing = today(s);
   closing.cash = s.cash;
+  compactRecord(closing);
   s.hoursUsed = 0;
   s.extraHours = 0;
 
@@ -608,7 +625,8 @@ export function advanceDay(s: GameState): void {
     const everStocked = s.pos.some((po) => po.productId === pid && po.status === 'arrived');
     if (everStocked && p.inventory.onHand <= 0 && (onStore(s, pid) || Object.values(p.listings).some((l) => l?.active))) {
       p.stockoutDays++;
-      if (p.stockoutDays % 5 === 1 || (hadStock && lost > 0)) notify(s, 'info', `Out of stock: ${def(s, pid).name}! ${lost ? `${lost} sales lost today.` : 'Shoppers leave empty-handed.'}`, true);
+      // Only the day it runs out stops the clock; the reminders are just news.
+      if (p.stockoutDays % 5 === 1 || (hadStock && lost > 0)) notify(s, 'info', `Out of stock: ${def(s, pid).name}! ${lost ? `${lost} sales lost today.` : 'Shoppers leave empty-handed.'}`, hadStock);
     }
   }
   if (s.flags.adsPausedCash) {
@@ -631,8 +649,23 @@ export function advanceDay(s: GameState): void {
   checkAmbitions(s);
   if (s.counters.revenueLifetime >= 1e6) milestone(s, 'revenue_1m');
 
+  // Broken reorder promises.
+  for (const [k, due] of Object.entries(s.counters)) {
+    if (!k.startsWith('promise-') || due !== s.day - 1) continue;
+    const sup = k.slice(8) as keyof typeof s.relationship;
+    s.relationship[sup] = Math.max(0, s.relationship[sup] - 15);
+    delete s.counters[k];
+    notify(s, 'info', `${SUPPLIERS[sup].company} noticed you never placed the repeat order you promised. They trust you less now.`);
+  }
   // Slow drifts
   marketDrift(s);
+  rivalWeek(s);
+  rivalPromoTick(s);
+  focusWeek(s);
+  campaignDay(s);
+  fundingDay(s);
+  peopleDay(s);
+  checkEnding(s);
   storyDay(s);
   s.discountFatigue = liveProducts(s).some((id) => s.products[id].discountPct > 0) ? Math.min(0.3, s.discountFatigue + 0.02) : Math.max(0, s.discountFatigue - 0.01);
   for (const p of Object.values(s.products)) p.copycat = Math.max(0, p.copycat - 0.0015);
@@ -644,19 +677,19 @@ export function advanceDay(s: GameState): void {
   }
 
   monthReport(s);
-  if (s.history.length > 800) s.history.splice(0, s.history.length - 800);
+  rollupHistory(s);
   rec.cash = s.cash;
   cashCrisis(s);
 }
 
 /** Run days until something worth the player's attention happens (or `max` days pass). */
-export function skipToNextEvent(s: GameState, max = 30): number {
+export function skipToNextEvent(s: GameState, max = 30, pauses: PauseSettings = DEFAULT_PAUSES): number {
   const before = s.notices.length ? s.notices[s.notices.length - 1].id : 0;
   let n = 0;
   while (n < max && !isBlocked(s)) {
     advanceDay(s);
     n++;
-    if (s.notices.some((x) => x.id > before && x.pause)) break;
+    if (s.notices.some((x) => x.id > before && pausesFor(x, pauses))) break;
     if (s.stage === 1 && !s.batchPacking && s.backlog.length) break;
   }
   return n;

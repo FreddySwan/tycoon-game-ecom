@@ -5,3 +5,6 @@ export * from './creative';
 export * from './startup';
 export * from './skills';
 export * from './story';
+export * from './rivals';
+export * from './focus';
+export * from './growth';

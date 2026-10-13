@@ -2,17 +2,19 @@ import { type ReactNode, useState } from 'react';
 import { clockLabel, dateLabel } from '../sim/calendar';
 import { STAGES } from '../sim/data';
 import { averageRating, founderMaxHours, hoursLeft, incomingUnits } from '../sim/economics';
+import * as E from '../sim/engine';
 import { isBlocked } from '../sim/engine';
 import { type Speed, useGame } from '../state/store';
 import { money } from './format';
+import { RollingMoney } from './Rolling';
 import { Icon } from './icons';
 
 const SPEEDS: { v: Speed; label: ReactNode; title: string }[] = [
-  { v: 0, label: <Icon name="pause" />, title: 'Pause' },
-  { v: 1, label: <Icon name="play" />, title: 'Play' },
-  { v: 2, label: <><Icon name="play" />2×</>, title: '2× speed' },
-  { v: 4, label: <><Icon name="play" />4×</>, title: '4× speed' },
-  { v: 8, label: <Icon name="forward" />, title: '8× speed' },
+  { v: 0, label: <Icon name="pause" />, title: 'Pause (space)' },
+  { v: 1, label: <Icon name="play" />, title: 'Play (1)' },
+  { v: 2, label: <><Icon name="play" />2×</>, title: '2× speed (2)' },
+  { v: 4, label: <><Icon name="play" />4×</>, title: '4× speed (3)' },
+  { v: 8, label: <Icon name="forward" />, title: '8× speed (4)' },
 ];
 
 export function Hud() {
@@ -25,6 +27,8 @@ export function Hud() {
   const toggleMute = useGame((s) => s.toggleMute);
   const newGame = useGame((s) => s.newGame);
   const admin = useGame((s) => s.admin);
+  const pauses = useGame((s) => s.pauses);
+  const setPause = useGame((s) => s.setPause);
   const toggleAdmin = useGame((s) => s.toggleAdmin);
   const [menu, setMenu] = useState(false);
   const hours = hoursLeft(game);
@@ -50,7 +54,9 @@ export function Hud() {
       </div>
       <div className={`stat ${game.cash < 300 ? 'warn' : ''}`}>
         <span className="label">Cash</span>
-        <span className="value">{money(game.cash)}</span>
+        <span className="value">
+          <RollingMoney value={game.cash} />
+        </span>
         {game.credit.balance > 0 && <span className="value small">credit −{money(game.credit.balance)}</span>}
       </div>
       {game.stage <= 2 && (
@@ -82,7 +88,7 @@ export function Hud() {
             {s.label}
           </button>
         ))}
-        <button className="skip" disabled={blocked} onClick={skip} title="Jump ahead to the next thing that needs you">
+        <button className="skip" disabled={blocked} onClick={skip} title="Jump ahead to the next thing that needs you (S)">
           Skip <Icon name="next" />
         </button>
         <button className="mute" onClick={toggleMute} title="Sound">
@@ -97,11 +103,28 @@ export function Hud() {
               <button
                 onClick={() => {
                   setMenu(false);
-                  if (confirm('Start a new game? Your current business will be lost.')) newGame();
+                  if (confirm('Start a new game in this save slot? To keep this business, first save it to another slot (Saved games).')) newGame();
                 }}
               >
                 New game
               </button>
+              <button
+                onClick={() => {
+                  setMenu(false);
+                  useGame.getState().setModal({ kind: 'saves' });
+                }}
+              >
+                Saved games…
+              </button>
+              <div className="menu-sec">Auto-pause when…</div>
+              <label className="menu-check">
+                <input type="checkbox" checked disabled /> A decision needs you
+              </label>
+              {(Object.keys(E.PAUSE_LABELS) as (keyof E.PauseSettings)[]).map((k) => (
+                <label key={k} className="menu-check">
+                  <input type="checkbox" checked={pauses[k]} onChange={(e) => setPause(k, e.target.checked)} /> {E.PAUSE_LABELS[k]}
+                </label>
+              ))}
               <button
                 onClick={() => {
                   setMenu(false);

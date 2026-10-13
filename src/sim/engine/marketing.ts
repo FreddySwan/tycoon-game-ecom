@@ -1,5 +1,5 @@
-import { CHANNELS, CREATORS, HOURS, MARKETPLACES } from '../data';
-import { breakEvenCPA, creativeUnlocked, def, hasSkill, liveProducts, orderBreakdown, recentCPA, round2, stockQuality } from '../economics';
+import { CHANNELS, CREATORS, HOURS, MARKETPLACE_AD_SHARE, MARKETPLACES } from '../data';
+import { breakEvenCPA, creativeUnlocked, def, hasSkill, listingVisibility, liveProducts, orderBreakdown, recentCPA, round2, stockQuality } from '../economics';
 import { chance, pick } from '../rng';
 import type { CampaignType, CategoryId, ChannelId, Creative, CreativeType, EmailCampaign, GameState, Listing, Segment } from '../types';
 import { addReviews } from './reviews';
@@ -376,12 +376,15 @@ export function marketerPass(s: GameState): void {
           launched++;
         }
       } else if (enough && (r.cpa === null || r.cpa > be)) {
-        l.sponsored = 0;
+        // Losing on the click, but the listing still needs visibility: drop to the spend that holds rank.
+        const floor = Math.round(listingVisibility(s, pid, ch).dailyRevenue * MARKETPLACE_AD_SHARE);
+        l.sponsored = floor >= 5 ? Math.min(l.sponsored, floor) : 0;
         paused++;
       } else if (enough && r.cpa !== null && r.cpa < target) {
         l.sponsored = Math.min(3000, Math.round(l.sponsored * 1.2 + 2));
         scaled++;
       }
+      if (l.sponsored && l.sponsored < listingVisibility(s, pid, ch).dailyRevenue * MARKETPLACE_AD_SHARE * 0.8) l.sponsored = Math.round(listingVisibility(s, pid, ch).dailyRevenue * MARKETPLACE_AD_SHARE);
       if (l.sponsored) knobs.push({ get: () => l.sponsored, set: (v) => (l.sponsored = v), cpa: r.cpa });
       // Lightning deal when rank is sagging and 20% off still leaves a profit.
       const price = l.price;

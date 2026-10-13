@@ -1,4 +1,6 @@
 import { cpmSeason, demandSeason, dayOfYear, periodOf, type PeriodKind } from './calendar';
+import { archiveSpan } from './engine/history';
+import { traitMult } from './engine/people';
 import {
   BENEFITS,
   CATEGORY_VIBE,
@@ -18,6 +20,9 @@ import {
   MODULES,
   OVERHEAD_RATE,
   PAYROLL_EVERY,
+  DISCOUNT_FLOOR,
+  INCOME_TAX,
+  MARKETPLACE_AD_SHARE,
   PACK_SPEED,
   SKILLS,
   DIFFICULTY,
@@ -36,19 +41,21 @@ import {
 } from './data';
 import type {
   AdCell,
+  AdDay,
+  AdSource,
   AudienceDef,
   Brand,
   CategoryId,
   ChannelId,
+  DailyRecord,
   GameState,
-  AdDay,
-  AdSource,
   ModKey,
   PLCategory,
   ProductDef,
-  Slice,
   ProductState,
+  Rival,
   SkillId,
+  Slice,
   SupplierId,
 } from './types';
 
@@ -79,7 +86,7 @@ export function audiences(s: GameState, pid: string): [AudienceDef, AudienceDef]
 
 /** Product of all active modifiers for a key (optionally also those scoped to e.g. a supplier). */
 export function mod(s: GameState, key: ModKey, scope?: string): number {
-  let m = 1;
+  let m = traitMult(s, key);
   for (const x of s.modifiers ?? []) if (x.key === key && x.until >= s.day && (!x.scope || x.scope === scope)) m *= x.mult;
   return m;
 }
@@ -94,7 +101,8 @@ export function listPrice(s: GameState, pid: string, supplierId: SupplierId, qty
   const tier = qty >= 10000 ? 0.8 : qty >= 3000 ? 0.83 : qty >= 1000 ? 0.855 : qty >= 500 ? 0.945 : 1;
   const contract = activeContract(s, supplierId);
   const priceUp = (1 + (s.counters[`priceUp-${supplierId}`] ?? 0)) * mod(s, 'unitCost', supplierId);
-  return round2(def(s, pid).baseUnitCost * SUPPLIERS[supplierId].priceMult * tier * priceUp * marketOf(s, pid).cost * (contract ? 1 - contract.discount : 1));
+  const discounts = Math.max(DISCOUNT_FLOOR, SUPPLIERS[supplierId].priceMult * tier * (contract ? 1 - contract.discount : 1));
+  return round2(def(s, pid).baseUnitCost * discounts * priceUp * marketOf(s, pid).cost);
 }
 
 export function freightPerUnit(s: GameState, pid: string, freight: 'air' | 'sea'): number {
@@ -281,7 +289,7 @@ export function returnRate(s: GameState, pid: string): number {
   const overPromise = s.products[pid].benefits.reduce((a, id) => a + (d.benefits.find((b) => b.id === id)?.returns ?? 0), 0);
   const ratio = effectivePrice(s, pid) / d.refPrice;
   const bargain = ratio < 0.8 ? 0.02 : ratio > 1.2 ? -0.01 : 0;
-  return Math.max(0.01, 0.02 + (1 - stockQuality(s, pid)) * 0.1 + overPromise + bargain);
+  return Math.max(0.01, (0.02 + (1 - stockQuality(s, pid)) * 0.1 + overPromise + bargain) * mod(s, 'refunds'));
 }
 
 export function perception(s: GameState, pid: string): { label: string; ratio: number } {
@@ -297,7 +305,9 @@ export function priceFactor(s: GameState, pid: string, elasticity: number, price
   const shipPenalty = ch === 'store' && !brand.freeShipping ? CUSTOMER_SHIPPING_CHARGE * 1.3 : 0;
   const perceived = price + shipPenalty;
   const fatigue = s.products[pid].discountPct > 0 ? s.discountFatigue * 0.3 : s.discountFatigue;
-  return Math.pow(d.refPrice / perceived, elasticity) * (1 - fatigue);
+  // Crafthaus shoppers pay a premium for quality: their reference price is 30% higher.
+  const ref = d.refPrice * (ch === 'crafthaus' ? 1.3 : 1);
+  return Math.pow(ref / perceived, elasticity) * (1 - fatigue);
 }
 
 export function trendMult(s: GameState, pid: string, day = s.day): number {
@@ -314,9 +324,59 @@ export function trendMult(s: GameState, pid: string, day = s.day): number {
   return (day <= peak ? 0.7 + 1.3 * Math.exp(-x * x) : 0.25 + 1.75 * Math.exp(-x * x)) * season;
 }
 
-/** Copycat sellers steal a share of every shopper who would have bought. */
+/** Copycats, rivals and market drift all take a share of every shopper who would have bought. */
 export function copycatMult(s: GameState, pid: string): number {
-  return (1 - s.products[pid].copycat) * (s.products[pid].market?.share ?? 1);
+  return (1 - s.products[pid].copycat) * (s.products[pid].market?.share ?? 1) * rivalDemandMult(s, pid);
+}
+
+// ───────────────────────────── rivals ─────────────────────────────
+
+export function activeRivals(s: GameState, cat: CategoryId): Rival[] {
+  return (s.rivals ?? []).filter((r) => r.category === cat && r.exitedDay === undefined);
+}
+
+/** How strongly a rival pulls shoppers today. A copy of your product pulls twice as hard on that product. */
+export function rivalScore(s: GameState, r: Rival, pid?: string): number {
+  if ((r.outUntil ?? -1) >= s.day) return 0;
+  const sale = (r.saleUntil ?? -1) >= s.day ? 0.75 : 1;
+  const price = Math.max(0.4, r.price * sale);
+  const pushing = (r.pushUntil ?? -1) >= s.day ? 1.5 : 1;
+  const direct = pid && r.targets === pid ? 1.6 : 1;
+  return r.strength * Math.pow(r.rating / 4.2, 2) * Math.pow(price, -1.3) * (1 + 0.2 * r.ads) * pushing * direct;
+}
+
+/** Scores of the two starting incumbents, used as the "normal market" baseline. */
+const BASE_RIVAL_SCORE = 2 * Math.pow(1, -1.3) * 1.2;
+
+/** How much of a product's demand the rivals leave you (1 = a normal market, lower = they're winning). */
+export function rivalDemandMult(s: GameState, pid: string): number {
+  if (!s.rivals?.length) return 1;
+  const cat = def(s, pid).category;
+  const total = activeRivals(s, cat).reduce((a, r) => a + rivalScore(s, r, pid), 0);
+  const k = 0.22;
+  return Math.max(0.3, Math.min(1.6, (1 + k * BASE_RIVAL_SCORE) / (1 + k * total)));
+}
+
+/** Rival ad spend bids up the auction for everyone in the category. */
+export function rivalAdMult(s: GameState, cat: CategoryId): number {
+  if (!s.rivals?.length) return 1;
+  const pressure = activeRivals(s, cat).reduce((a, r) => a + r.ads * ((r.pushUntil ?? -1) >= s.day ? 1.6 : 1), 0);
+  return Math.max(0.85, (1 + 0.07 * pressure) / (1 + 0.07 * 2));
+}
+
+/** Rough market shares in a category: you vs each rival, by daily orders. */
+export function categoryShares(s: GameState, cat: CategoryId): { mine: number; rivals: { rival: Rival; share: number }[] } {
+  const mine = liveProducts(s)
+    .filter((id) => def(s, id).category === cat)
+    .reduce((a, id) => a + avgDailyOrders(s, id, 7), 0);
+  const rivals = activeRivals(s, cat);
+  const scores = rivals.map((r) => rivalScore(s, r));
+  const totalScore = scores.reduce((a, x) => a + x, 0) || 1;
+  // Rivals' combined volume: the category's market size times how much of it they hold.
+  const market = CATEGORIES[cat].marketSize * 0.02 * (1 + intlFactor(s));
+  const theirs = Math.max(market, mine * 0.5);
+  const total = mine + theirs;
+  return { mine: mine / total, rivals: rivals.map((rival, i) => ({ rival, share: (theirs / total) * (scores[i] / totalScore) })) };
 }
 
 export function siteCVR(s: GameState, pid: string, aud: AudienceDef | null, cvrBoost = 1): number {
@@ -344,7 +404,7 @@ export function cellForecast(s: GameState, pid: string, cell: AdCell): CellForec
   const reach = 1 + intlFactor(s);
   const competition = 0.55 + d.bars.competition * 0.15;
   const skill = hasSkill(s, 'adsAdvanced') ? 0.92 : 1;
-  const cpm = aud.cpm * competition * cpmSeason(s.day) * (1 + Math.pow(cell.budget / (aud.scale * reach), 1.15) * 0.6) * mod(s, 'adCost') * marketOf(s, pid).ad * skill;
+  const cpm = aud.cpm * competition * cpmSeason(s.day) * (1 + Math.pow(cell.budget / (aud.scale * reach), 1.15) * 0.6) * mod(s, 'adCost') * marketOf(s, pid).ad * skill * rivalAdMult(s, d.category);
   const fatigue = Math.max(0.6, 1 - 0.012 * Math.max(0, cell.daysActive - 5));
   const marketer = s.team.marketer.count > 0 ? 1.1 : 1;
   const doy = dayOfYear(s.day);
@@ -396,7 +456,7 @@ export function recentCPA(cell: { history: { spend: number; orders: number }[] }
 
 export function searchForecast(s: GameState, pid: string) {
   const d = def(s, pid);
-  const cpc = (0.6 + 0.25 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost') * marketOf(s, pid).ad;
+  const cpc = (0.6 + 0.25 * d.bars.competition) * cpmSeason(s.day) * mod(s, 'adCost') * marketOf(s, pid).ad * rivalAdMult(s, d.category);
   const maxClicks = d.searchVolume * trendMult(s, pid) * (1 + intlFactor(s)) * copycatMult(s, pid);
   const cvr = siteCVR(s, pid, null) * 1.6 * (hasSkill(s, 'searchAds') ? 1.1 : 1);
   return { cpc, maxClicks, cvr, cpa: cpc / cvr };
@@ -461,7 +521,7 @@ export function hoursLeft(s: GameState): number {
 
 /** Founder hours to pack one order: packing gear speeds it up. */
 export function packHours(s: GameState): number {
-  let h = HOURS.handPack;
+  let h = HOURS.handPack / mod(s, 'packRate');
   for (const [id, mult] of Object.entries(PACK_SPEED)) if (hasSkill(s, id as SkillId)) h *= mult ?? 1;
   return h;
 }
@@ -540,6 +600,7 @@ export function fulfillmentCapacity(s: GameState): Capacity {
   const leadCover = packers ? Math.min(1, (s.team.lead.count * 15) / packers) : 0;
   const rate =
     PACKER_RATE *
+    mod(s, 'packRate') *
     moraleMult(s.team.packer.morale) *
     (1 + 0.15 * leadCover) *
     (s.automation.labelPrinter ? 1.1 : 1) *
@@ -606,32 +667,39 @@ export function stockDays(s: GameState, pid: string): number | null {
 }
 
 export function emptyPL(): Record<PLCategory, number> {
-  return { revenue: 0, refunds: 0, cogs: 0, fulfillment: 0, fees: 0, ads: 0, payroll: 0, rent: 0, other: 0, interest: 0 };
+  return { revenue: 0, refunds: 0, cogs: 0, fulfillment: 0, fees: 0, ads: 0, payroll: 0, rent: 0, other: 0, interest: 0, tax: 0 };
 }
 
 export function profitOf(pl: Record<PLCategory, number>): number {
-  return pl.revenue - pl.refunds - pl.cogs - pl.fulfillment - pl.fees - pl.ads - pl.payroll - pl.rent - pl.other - pl.interest;
+  return pl.revenue - pl.refunds - pl.cogs - pl.fulfillment - pl.fees - pl.ads - pl.payroll - pl.rent - pl.other - pl.interest - (pl.tax ?? 0);
+}
+
+/** Daily records in the window plus, for windows longer than the daily history, whole archived months. */
+function windowRows(s: GameState, days: number) {
+  const recent = s.history.slice(-days);
+  const months = days > recent.length ? archiveSpan(s, days - recent.length) : [];
+  return { rows: [...months, ...recent] as Pick<DailyRecord, 'pl' | 'orders' | 'repeatOrders' | 'channelRevenue' | 'brandRevenue' | 'brandCost'>[], days: recent.length + months.reduce((a, m) => a + m.days, 0) };
 }
 
 export function trailing(s: GameState, days: number) {
-  const recent = s.history.slice(-days);
+  const { rows, days: covered } = windowRows(s, days);
   const pl = emptyPL();
   let orders = 0;
   let repeat = 0;
   const channel: Partial<Record<ChannelId, number>> = {};
-  for (const r of recent) {
-    for (const k of Object.keys(pl) as PLCategory[]) pl[k] += r.pl[k];
+  for (const r of rows) {
+    for (const k of Object.keys(pl) as PLCategory[]) pl[k] += r.pl[k] ?? 0;
     orders += r.orders;
     repeat += r.repeatOrders;
     for (const [ch, v] of Object.entries(r.channelRevenue)) channel[ch as ChannelId] = (channel[ch as ChannelId] ?? 0) + (v ?? 0);
   }
-  return { pl, profit: profitOf(pl), revenue: pl.revenue, orders, repeat, channel, days: recent.length };
+  return { pl, profit: profitOf(pl), revenue: pl.revenue, orders, repeat, channel, days: covered };
 }
 
 export function brandTrailing(s: GameState, brandId: number, days: number) {
   let revenue = 0;
   let cost = 0;
-  for (const r of s.history.slice(-days)) {
+  for (const r of windowRows(s, days).rows) {
     revenue += r.brandRevenue[brandId] ?? 0;
     cost += r.brandCost[brandId] ?? 0;
   }
@@ -691,6 +759,24 @@ export function roughKeep(s: GameState, pid: string) {
   const fees = d.refPrice * 0.03 + 0.3;
   const keep = d.refPrice - landed - d.shipToCustomer - PACKAGING_COST.basic - fees;
   return { landed, fees, keep, margin: keep / d.refPrice };
+}
+
+/** A marketplace listing's visibility from sponsored spend: full at MARKETPLACE_AD_SHARE of its sales, ~0.55 with none. */
+export function listingVisibility(s: GameState, pid: string, ch: ChannelId): { share: number; mult: number; dailyRevenue: number } {
+  const l = s.products[pid]?.listings[ch];
+  if (!l) return { share: 0, mult: 0.55, dailyRevenue: 0 };
+  const days = Math.max(1, l.recent.length);
+  const dailyRevenue = (l.recent.reduce((a, x) => a + x, 0) / days) * channelPrice(s, pid, ch);
+  const spend = (l.adHistory ?? []).slice(-7).reduce((a, h) => a + h.spend, 0) / Math.max(1, Math.min(7, l.adHistory?.length ?? 0));
+  const share = dailyRevenue > 0 ? spend / dailyRevenue : l.sponsored > 0 ? MARKETPLACE_AD_SHARE : 0;
+  return { share, mult: 0.55 + 0.6 * Math.min(1, share / MARKETPLACE_AD_SHARE), dailyRevenue };
+}
+
+/** Income tax due at the end of this quarter, at the last 90 days' pace. */
+export function taxEstimate(s: GameState): number {
+  if (s.stage < 2) return 0;
+  const t = trailing(s, 90);
+  return Math.max(0, (t.profit + (t.pl.tax ?? 0)) * INCOME_TAX);
 }
 
 /** The day a channel next pays out (payouts land on days divisible by its schedule). */
@@ -779,6 +865,7 @@ export function cashForecast(s: GameState, days = 30): ForecastDay[] {
     }
     if (day % PAYROLL_EVERY === 0) pay('Payroll', payroll);
     if (day % 30 === 0) pay('Admin & overhead', overhead);
+    if (day % 90 === 0) pay('Income tax', taxEstimate(s));
     for (const b of s.bills) {
       const due = b.dueDay === day || (!!b.everyDays && day > b.dueDay && (day - b.dueDay) % b.everyDays === 0);
       if (due && b.category !== 'payroll') pay(b.label, b.amount);
@@ -866,15 +953,16 @@ export interface PeriodPL {
 export function periodPL(s: GameState, kind: PeriodKind, count: number): PeriodPL[] {
   const groups = new Map<number, PeriodPL>();
   const size = kind === 'month' ? 30 : kind === 'quarter' ? 90 : 360;
-  for (const r of s.history) {
+  const rows = [...(s.archive ?? []).map((m) => ({ day: m.fromDay, n: m.days, pl: m.pl, plSub: m.plSub })), ...s.history.map((r) => ({ day: r.day, n: 1, pl: r.pl, plSub: r.plSub }))];
+  for (const r of rows) {
     const { key, label } = periodOf(r.day, kind);
     let g = groups.get(key);
     if (!g) {
       g = { label, days: 0, partial: false, pl: emptyPL(), sub: {} };
       groups.set(key, g);
     }
-    g.days++;
-    for (const k of Object.keys(g.pl) as PLCategory[]) g.pl[k] += r.pl[k];
+    g.days += r.n;
+    for (const k of Object.keys(g.pl) as PLCategory[]) g.pl[k] += r.pl[k] ?? 0;
     for (const [cat, lines] of Object.entries(r.plSub ?? {})) {
       const into = (g.sub[cat as PLCategory] ??= {});
       for (const [name, v] of Object.entries(lines ?? {})) into[name] = (into[name] ?? 0) + v;

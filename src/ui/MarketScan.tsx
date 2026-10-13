@@ -5,6 +5,7 @@ import { completeScan } from '../sim/engine';
 import { useGame } from '../state/store';
 import { money } from './format';
 import { ProductImage } from './photos';
+import { seeded, shuffleWith } from './seeded';
 import { Icon } from './icons';
 
 interface Rival {
@@ -14,6 +15,7 @@ interface Rival {
   reviews: number;
   snippet: string;
   real: boolean;
+  opening?: boolean;
 }
 
 /** Deep-dive mini-game: read a page of rival listings, find the opportunity, the real complaint and the price gap. */
@@ -28,21 +30,26 @@ export function MarketScan({ productId }: { productId: string }) {
   const [price, setPrice] = useState(d.refPrice);
 
   const rivals = useMemo<Rival[]>(() => {
-    const names = ['ProGear', 'HomeJoy', 'Valuemax', 'Nordly', 'Brightside', 'Tidy&Co'];
+    const rnd = seeded(game, `scan-${productId}`);
+    const names = shuffleWith(['ProGear', 'HomeJoy', 'Valuemax', 'Nordly', 'Brightside', 'Tidy&Co', 'Kova', 'Lumo'], rnd).slice(0, 6);
     const base = d.refPrice;
     const snippets = scan ? [scan.complaint, scan.decoys[0], scan.complaint, scan.decoys[1], scan.complaint, 'Does the job.'] : ['Good', 'Fine', 'Okay', 'Nice', 'Meh', 'Great'];
-    return names.map((name, i) => ({
+    // Slot 0 is the opening: lots of reviews, weak rating. The rest vary per game.
+    const list = names.map((name, i) => ({
       name: `${name} ${d.name.split(' ').slice(-1)[0]}`,
-      price: Math.round(base * [0.72, 0.95, 0.65, 1.25, 1.05, 0.88][i]),
-      rating: [3.6, 4.4, 3.3, 4.7, 3.9, 4.1][i],
-      reviews: [4200, 860, 2900, 140, 1800, 520][i],
+      price: Math.round(base * (i === 0 ? 0.7 + rnd() * 0.08 : 0.6 + rnd() * 0.75)),
+      rating: i === 0 ? Math.round((3.3 + rnd() * 0.35) * 10) / 10 : Math.round((3.9 + rnd() * 0.85) * 10) / 10,
+      reviews: i === 0 ? Math.round(3500 + rnd() * 2500) : Math.round(100 + rnd() * 2600),
       snippet: snippets[i],
       real: snippets[i] === scan?.complaint,
+      opening: i === 0,
     }));
-  }, [d, scan]);
+    return shuffleWith(list, rnd);
+  }, [d, scan]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Opportunity: lots of reviews, weak rating (index 0 = 4,200 reviews at 3.6★).
-  const gapAnswer = 0;
+  // Opportunity: the rival with lots of reviews but a weak rating.
+  const gapAnswer = Math.max(0, rivals.findIndex((r) => r.opening));
+
   const sweet = [d.refPrice * 0.9, d.refPrice * 1.15];
   const score = (picks.gap === gapAnswer ? 1 : 0) + (picks.complaint !== undefined && rivals[picks.complaint].real ? 1 : 0) + (picks.price !== undefined && picks.price >= sweet[0] && picks.price <= sweet[1] ? 1 : 0);
   const prompts = [

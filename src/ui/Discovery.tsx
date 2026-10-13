@@ -8,6 +8,7 @@ import { useGame } from '../state/store';
 import { money } from './format';
 import { LineChart } from './LineChart';
 import { ProductImage } from './photos';
+import { seeded } from './seeded';
 import { Icon, withIcons } from './icons';
 
 const DIG_LINES = ['Scrolling Bazaarly bestseller lists…', 'Reading Reddit threads about annoying problems…', 'Watching what’s trending on Scrollr…', 'Checking Seekly search trends…'];
@@ -115,17 +116,6 @@ function interest(d: ProductDef, day: number): number {
   return day <= peak ? 0.7 + 1.3 * Math.exp(-x * x) : 0.25 + 1.75 * Math.exp(-x * x);
 }
 
-/** Small deterministic hash so rival listings stay the same between renders. */
-function seedOf(text: string): () => number {
-  let h = 2166136261;
-  for (const c of text) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-  return () => {
-    h = Math.imul(h ^ (h >>> 15), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    return ((h ^= h >>> 16) >>> 0) / 4294967296;
-  };
-}
-
 const TREND_OPTS: { v: TrendKind; label: string; why: string }[] = [
   { v: 'evergreen', label: 'Evergreen: steady all year', why: 'sells all year. Safe to stock deeper and build a brand on.' },
   { v: 'seasonal', label: 'Seasonal: spikes at one time of year', why: 'sells in one season. Stock up before the peak and don’t get stuck with boxes after it.' },
@@ -143,7 +133,7 @@ function crowdOf(n: number): string {
 
 function buildQuiz(game: GameState, pid: string) {
   const d = def(game, pid);
-  const rnd = seedOf(pid);
+  const rnd = seeded(game, pid);
   // Trend: 11 months back, 6 weeks ahead from Seekly's forecast
   const days: number[] = [];
   for (let k = -330; k <= 45; k += 5) days.push(game.day + k);

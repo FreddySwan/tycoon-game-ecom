@@ -1714,3 +1714,154 @@ table.pl .caret {
 .story-scene p {
   line-height: 1.5;
 }
+.slot-active {
+  border-color: #bfe3cb;
+  background: #f1faf4;
+}
+.button-like {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #fff;
+  border: 2px solid #eadfce;
+  font-weight: 700;
+}
+.menu-sec {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8a8290;
+  padding: 8px 8px 2px;
+  border-top: 1px solid #eadfce;
+  margin-top: 4px;
+}
+.menu-check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 8px;
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.digest {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* ───────── market ───────── */
+.share-bar {
+  display: flex;
+  height: 26px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eee6da;
+}
+.share-bar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.warn-text {
+  color: #c0712c;
+}
+.feed.light {
+  background: #f5f1ea;
+  color: var(--ink);
+}
+
+/* ───────── founder's week ───────── */
+.week-card {
+  background: var(--paper);
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.week-card.unset {
+  border: 2px dashed #f0a860;
+}
+.week-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip {
+  font-size: 11px;
+  font-weight: 700;
+  background: #f1ebe2;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.focus-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.focus-card {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 10px;
+  border-radius: 12px;
+  border: 2px solid #eadfce;
+  background: #fff;
+}
+.focus-card.on {
+  border-color: #f0a860;
+  background: #fff4e6;
+}
+.fc-icon {
+  font-size: 22px;
+  color: #c0712c;
+}
+.mission {
+  display: grid;
+  gap: 6px;
+}
+.mission-chapter {
+  background: #fff4e6;
+  border: 2px solid #f2cfa5;
+  border-radius: 10px;
+  padding: 6px 10px;
+  display: grid;
+  gap: 2px;
+}
+.tabs.groups button {
+  font-size: 14px;
+  font-weight: 800;
+  padding: 7px 14px;
+}
+.tabs.subnav {
+  padding-top: 0;
+}
+.tabs.subnav button {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.rolling {
+  transition: color 0.3s;
+}
+.rolling.up {
+  color: #7ee2a8;
+}
+.rolling.down {
+  color: #ff9a9a;
+}

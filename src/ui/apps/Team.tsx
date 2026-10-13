@@ -1,6 +1,6 @@
 import { ROLES, ROLE_ORDER } from '../../sim/data';
 import { headcount, payrollMonthly, seatsUsed } from '../../sim/economics';
-import { fire, giveRaise, hire, promoteToLead, RECRUIT_FEE, seatLimit, setShifts } from '../../sim/engine';
+import { fire, giveRaise, hire, promoteToLead, RECRUIT_FEE, seatLimit, setShifts, traitEffect, TRAITS } from '../../sim/engine';
 import { useGame } from '../../state/store';
 import { AppTitle, Meter } from '../bits';
 import { money } from '../format';
@@ -36,6 +36,12 @@ export function Team() {
               <p>
                 {ROLES[p.role].name} since day {p.hiredDay}
               </p>
+              {p.trait && (
+                <p className="tiny" style={{ margin: 0 }}>
+                  <span className={`pill ${p.trait === 'loyal' ? 'good' : ''}`}>{TRAITS[p.trait].label}</span> {traitEffect(p) || TRAITS[p.trait].desc}
+                  {p.friend && <span className="muted"> · your friend</span>}
+                </p>
+              )}
               <div className="tiny">Morale</div>
               <Meter value={p.morale} max={100} />
             </div>

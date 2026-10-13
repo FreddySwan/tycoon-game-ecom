@@ -2,6 +2,8 @@ import { STARTING_DEBT, BRAND_COLORS, CITIES, FIRST_NAMES, FOUNDER_HOURS, LAST_I
 import { def, emptyPL, hoursLeft, round2 } from '../economics';
 import { pick } from '../rng';
 import { startStory } from './story';
+import { initRivals } from './rivals';
+import { compactRecord, rollupHistory } from './history';
 import { CHANNELS, hooksFor } from '../data';
 import type { AdDay, AdSource, Brand, ChannelId, Creative, CreativeType, DailyRecord, Difficulty, GameState, MilestoneId, ModuleId, NoticeKind, OrderSource, PLCategory, ProductDef, ProductState, RoleId, Slice, StoryState } from '../types';
 
@@ -29,6 +31,8 @@ export const MILESTONE_LABELS: Record<MilestoneId, string> = {
   first_wholesale: 'First wholesale account',
   revenue_1m: '$1M lifetime revenue',
   moved_campus: 'Moving day: the campus',
+  board_happy: 'The board is happy',
+  rival_acquired: 'Bought a rival',
   first_exclusive: 'First exclusive product',
   first_international_sale: 'First international sale',
   second_brand: 'A second brand',
@@ -57,6 +61,8 @@ export const MILESTONE_PICS: Record<MilestoneId, string> = {
   first_wholesale: '🏪',
   revenue_1m: '💎',
   moved_campus: '🌆',
+  board_happy: '💼',
+  rival_acquired: '🏆',
   first_exclusive: '✨',
   first_international_sale: '🌍',
   second_brand: '🎨',
@@ -135,6 +141,8 @@ export function createGame(seed = Date.now(), difficulty: Difficulty = 'normal')
   const s: GameState = {
     version: 2,
     skills: {},
+    rivals: [],
+    rivalLog: [],
     difficulty,
     story: newStory(),
     rng: seed | 0,
@@ -203,10 +211,11 @@ export function createGame(seed = Date.now(), difficulty: Difficulty = 'normal')
     stageOffer: null,
     discountFatigue: 0,
     flags: {},
-    counters: { revenueLifetime: 0 },
+    counters: { revenueLifetime: 0, runSeed: (seed >>> 0) % 1_000_000 },
     seq: 100,
     lastDayOrders: 0,
   };
+  initRivals(s);
   startStory(s);
   return s;
 }
@@ -352,6 +361,7 @@ export function migrate(s: GameState): GameState {
     s.skills = { adsBasics: { progress: 4 }, searchAds: { progress: 4 }, researchTool: { progress: 0, active: true }, adSpy: { progress: 0, active: true } };
   }
   s.difficulty ??= 'normal';
+  if (!s.rivals) initRivals(s);
   if (!s.story) {
     s.story = newStory();
     s.story.beats = { intro: 1, older: 1 };
@@ -382,6 +392,12 @@ export function migrate(s: GameState): GameState {
     r.adStats ??= {};
     r.sources ??= {};
   }
+  for (const r of s.history) {
+    r.pl.tax ??= 0;
+    compactRecord(r);
+  }
+  for (const m of s.archive ?? []) m.pl.tax ??= 0;
+  rollupHistory(s);
   s.rev = 1;
   return s;
 }

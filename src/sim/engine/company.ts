@@ -1,4 +1,4 @@
-import { BRAND_SETUP_COST, CATALOG, LOAN, REGIONS, SPACES, STAGES, STAGE_SPACE } from '../data';
+import { BRAND_SETUP_COST, CATALOG, LOAN, REGIONS, ROLES, SPACES, STAGES, STAGE_SPACE } from '../data';
 import { def, mod, round2, trailing } from '../economics';
 import { ambitionDone, stageReady } from '../progress';
 import type { AmbitionId, GameState, ProductDef, RegionId, StageId } from '../types';
@@ -222,6 +222,21 @@ export function chargeInterest(s: GameState): void {
   }
 }
 
+const OFFICE_ROLES = ['support', 'marketer', 'designer', 'brandmgr', 'buyer'] as const;
+function officeStaff(s: GameState): number {
+  return OFFICE_ROLES.reduce((a, r) => a + s.team[r].count, 0);
+}
+function officeCost(s: GameState): number {
+  return OFFICE_ROLES.reduce((a, r) => a + s.team[r].count * ROLES[r].wage * s.team[r].wageMult, 0);
+}
+export function angelAmount(s: GameState): number {
+  return Math.max(25000, Math.round((trailing(s, 30).revenue * 0.6) / 1000) * 1000);
+}
+function deferAmount(s: GameState): number {
+  const due = s.payables.filter((p) => p.dueDay <= s.day + 30).reduce((a, p) => a + p.amount, 0) + s.pos.reduce((a, p) => a + (p.status !== 'arrived' ? p.balanceDue : 0), 0);
+  return Math.round(Math.max(due, -s.cash + 2000) / 100) * 100;
+}
+
 export function bridgeAmount(s: GameState): number {
   return Math.max(10000, Math.round((trailing(s, 30).revenue * 0.25) / 1000) * 1000);
 }
@@ -244,6 +259,15 @@ export function cashCrisis(s: GameState): void {
     const amt = bridgeAmount(s);
     choices.push({ id: 'bridge', label: 'Bridge loan from Harbor Capital', hint: `+$${amt.toLocaleString()}, repay $${Math.round(amt * 1.2).toLocaleString()} in 60 days` });
   }
+  if (!s.flags.angelUsed && s.stage >= 2) {
+    const amt = angelAmount(s);
+    choices.push({ id: 'angel', label: 'Sell 15% of the company to an angel investor', hint: `+$${amt.toLocaleString()}, no repayment; you own less of what you built` });
+  }
+  if ((s.counters.deferredDay ?? -999) < s.day - 60) {
+    const amt = deferAmount(s);
+    if (amt > 0) choices.push({ id: 'defer', label: 'Ask suppliers for 45 more days', hint: `+$${amt.toLocaleString()} breathing room, 5% fee, suppliers trust you less` });
+  }
+  if (s.stage >= 2 && officeStaff(s) > 0) choices.push({ id: 'cut', label: 'Cut costs: let office staff go, pause all ads', hint: `Saves ~$${Math.round(officeCost(s)).toLocaleString()}/month; morale drops` });
   if (stock > 500) choices.push({ id: 'liquidate', label: 'Sell 30% of stock to a liquidator', hint: `+$${Math.round(stock * 0.3 * 0.4).toLocaleString()} (40% of cost)` });
   choices.push({ id: 'quit', label: 'Close the business', hint: 'See your recap' });
   if (choices.length === 1 && s.cash > -Math.max(2000, trailing(s, 30).revenue * 0.05)) return;
@@ -271,6 +295,29 @@ export function resolveCashCrisis(s: GameState, choiceId: string): void {
     s.loan = { amount: Math.round(amt * 1.2), dueDay: s.day + 60, principal: amt, label: 'Harbor Capital bridge loan' };
     s.flags.bridgeUsed = true;
     notify(s, 'cash', `Harbor Capital wired $${amt.toLocaleString()}. Repay $${Math.round(amt * 1.2).toLocaleString()} on day ${s.day + 60}.`);
+  } else if (choiceId === 'angel') {
+    const amt = angelAmount(s);
+    s.cash = round2(s.cash + amt); // equity, not income: it never touches the P&L
+    s.flags.angelUsed = true;
+    s.counters.equitySold = (s.counters.equitySold ?? 0) + 0.15;
+    notify(s, 'cash', `An angel investor bought 15% of the company for $${amt.toLocaleString()}. You own ${Math.round((1 - s.counters.equitySold) * 100)}% now.`);
+  } else if (choiceId === 'defer') {
+    const amt = deferAmount(s);
+    s.cash = round2(s.cash + amt);
+    s.payables.push({ dueDay: s.day + 45, amount: round2(amt * 1.05), label: 'Deferred supplier balance' });
+    for (const id of Object.keys(s.relationship) as (keyof typeof s.relationship)[]) s.relationship[id] = Math.max(0, s.relationship[id] - 10);
+    s.counters.deferredDay = s.day;
+    notify(s, 'cash', `Suppliers agreed to wait: +$${amt.toLocaleString()} now, $${Math.round(amt * 1.05).toLocaleString()} due in 45 days.`);
+  } else if (choiceId === 'cut') {
+    for (const role of OFFICE_ROLES) s.team[role].count = 0;
+    s.people = s.people.filter((p) => !OFFICE_ROLES.includes(p.role as (typeof OFFICE_ROLES)[number]));
+    for (const p of Object.values(s.products)) {
+      for (const c of Object.values(p.ads)) c.active = false;
+      p.search.active = false;
+      for (const l of Object.values(p.listings)) if (l) l.sponsored = 0;
+    }
+    for (const t of Object.values(s.team)) t.morale = Math.max(10, t.morale - 20);
+    notify(s, 'team', 'You let the office team go and paused every ad. The warehouse is very quiet.');
   } else if (choiceId === 'liquidate') {
     let raised = 0;
     for (const p of Object.values(s.products)) {

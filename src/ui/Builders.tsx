@@ -6,20 +6,12 @@ import type { CategoryId, GameState, HookType } from '../sim/types';
 import { useGame } from '../state/store';
 import { Icon } from './icons';
 import { ProductImage } from './photos';
+import { seeded, shuffleWith } from './seeded';
 
-/** Deterministic shuffle so options don't move around between renders. */
+let runSeed = 0;
+/** Deterministic shuffle so options don't move around between renders, but differ per game. */
 function shuffled<T>(items: T[], seed: string): T[] {
-  let h = 2166136261;
-  for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-  const r = () => {
-    h = Math.imul(h ^ (h >>> 15), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    return ((h ^= h >>> 16) >>> 0) / 4294967296;
-  };
-  return items
-    .map((v) => ({ v, k: r() }))
-    .sort((a, b) => a.k - b.k)
-    .map((x) => x.v);
+  return shuffleWith(items, seeded({ counters: { runSeed } } as unknown as GameState, seed));
 }
 
 interface Opt {
@@ -142,12 +134,14 @@ function storeQuiz(game: GameState, pid: string, brandName: string) {
 /** Store builder: five calls about what makes a product page sell. The score sets store quality (conversion). */
 export function StoreBuilder({ brandId }: { brandId: number }) {
   const game = useGame((s) => s.game);
+  runSeed = game.counters.runSeed ?? 0;
   const act = useGame((s) => s.act);
   const setModal = useGame((s) => s.setModal);
   const brand = game.brands.find((b) => b.id === brandId) ?? game.brands[0];
   const pid = Object.keys(game.products).find((id) => game.products[id].brandId === brand.id && !game.products[id].retired) ?? liveProducts(game)[0];
   const quiz = useMemo(() => (pid ? storeQuiz(game, pid, brand.name) : []), [pid]); // eslint-disable-line react-hooks/exhaustive-deps
   const [step, setStep] = useState(0);
+  const [before] = useState(brand.store.quality ?? null);
   const [picks, setPicks] = useState<string[][]>(quiz.map(() => []));
   const course = hasSkill(game, 'storeCourse');
   if (!pid) return null;
@@ -234,6 +228,11 @@ export function StoreBuilder({ brandId }: { brandId: number }) {
               <p className="muted">
                 {score.toFixed(1)}/5 right calls{course ? ' + course bonus' : ''}. Better pages convert more of every visitor you pay for.
               </p>
+              {(() => {
+                const after = brand.store.quality ?? storeQualityFrom(game, score);
+                const lift = (after - (before ?? 0.55)) * 0.3;
+                return <p className="callout good">Store trust {lift >= 0 ? '+' : ''}{Math.round(lift * 100)} points{before == null ? ' versus an average store' : ' versus your old pages'}: that’s roughly {lift >= 0 ? '+' : ''}{Math.round(lift * 100)}% conversion on every visitor.</p>;
+              })()}
             </div>
             <ul>
               {quiz.map((x, i) => (
@@ -296,6 +295,7 @@ function rivalAds(game: GameState, pid: string): RivalAd[] {
 /** Competitor creative research: spot the ads that make money, see what they share, write yours. */
 export function CreativeResearch({ productId }: { productId: string }) {
   const game = useGame((s) => s.game);
+  runSeed = game.counters.runSeed ?? 0;
   const act = useGame((s) => s.act);
   const setModal = useGame((s) => s.setModal);
   const d = def(game, productId);
@@ -304,6 +304,7 @@ export function CreativeResearch({ productId }: { productId: string }) {
   const hooks = hooksFor(d);
   const scan = MARKET_SCAN[d.baseId ?? d.id];
   const [step, setStep] = useState(0);
+  const [before] = useState(game.products[productId]?.creativeQuality ?? 0.45);
   const [chosen, setChosen] = useState<string[]>([]);
   const [type, setType] = useState<HookType | null>(null);
   const [headline, setHeadline] = useState<string | null>(null);
@@ -438,7 +439,16 @@ export function CreativeResearch({ productId }: { productId: string }) {
                 {s3 >= 2 ? <Icon name="check" color="#1f9d55" /> : <Icon name="neutral" color="#c0712c" />} The best ads sound like a customer, not a brand, and use the hook style that’s working.
               </li>
             </ul>
-            <p className="tiny muted">Every ad for this product now uses this research: higher click-through and conversion.{winHook ? ' Your headline was set on all creatives.' : ''}</p>
+            {(() => {
+              const after = game.products[productId]?.creativeQuality ?? before;
+              const clicks = (0.8 + 0.45 * after) / (0.8 + 0.45 * before) - 1;
+              const conv = (0.92 + 0.18 * after) / (0.92 + 0.18 * before) - 1;
+              return (
+                <p className="callout good">
+                  Every ad for {d.name}: clicks <b>{clicks >= 0 ? '+' : ''}{Math.round(clicks * 100)}%</b>, conversion <b>{conv >= 0 ? '+' : ''}{Math.round(conv * 100)}%</b> versus before.{winHook ? ' Your headline is now on all its creatives.' : ''}
+                </p>
+              );
+            })()}
             <button className="primary" onClick={() => setModal(null)}>
               Done
             </button>

@@ -3,6 +3,7 @@ import { def, hasSkill, headcount, hoursLeft, liveProducts, round2, trailing } f
 import { chance, pick } from '../rng';
 import type { ChapterId, CharacterId, GameState, StoryMessage } from '../types';
 import { type ActionResult, nextId, notify, spendCash } from './core';
+import { hireFriend } from './people';
 
 // The founder's story: a college dropout who borrowed $4,000 from Mom, Sam and Maya to prove to Dad (and
 // themselves) that they can build a real business. It runs in chapters, each with a goal; texts arrive on the
@@ -207,6 +208,28 @@ export function storyDay(s: GameState): void {
       { id: 'skip', label: 'Too busy', hint: '' },
     ], 4),
   );
+  once(s, 'samJoins', s.stage >= 2 && s.day >= (st.beats.garageShelves ?? 9999) + 10, () => {
+    if (goodwill(s) >= 45)
+      text(s, 'sam', 'Okay. I quit the car wash. Hire me? I’ll pack, I’ll answer emails, I’ll sweep the garage. I believe in this thing.', 'samJoins', [
+        { id: 'hire', label: 'Welcome aboard, Sam', hint: 'A loyal packer who never quits' },
+        { id: 'no', label: 'I can’t afford you yet', hint: 'He’ll understand. Mostly.' },
+      ], 4);
+    else text(s, 'sam', 'Saw the garage pics on Maya’s story. Looks big. Good for you, man.', 'samDistant');
+  });
+  once(s, 'mayaJoins', s.stage >= 3 && s.day >= (st.beats.class ?? 9999) + 20, () => {
+    if (goodwill(s) >= 45)
+      text(s, 'maya', 'Hot take: your packaging and store could be SO much better. I just finished my design degree. Hire me as your designer?', 'mayaJoins', [
+        { id: 'hire', label: 'You’re hired', hint: 'Designer salary; boosts conversion and packaging' },
+        { id: 'no', label: 'Not right now', hint: '' },
+      ], 4);
+  });
+  once(s, 'brett', !!s.flags.brettLaunched, () =>
+    text(s, 'maya', 'Remember Brett Lawson from Econ 101? The guy who said dropping out was “for people who can’t hack it”? He just raised $2M to sell the exact same stuff as you. He’s everywhere on Scrollr.', 'brett'),
+  );
+  once(s, 'brettBroke', !!s.flags.brettBroke, () => {
+    bond(s, 'dad', 5);
+    text(s, 'sam', 'BRETT’S COMPANY RAN OUT OF MONEY. Two million dollars, gone in ads. You’re still here. I’m framing this.', 'brettBroke');
+  });
   once(s, 'dadWrong', s.stage >= 4, () => {
     bond(s, 'dad', 15);
     text(s, 'dad', 'I was wrong about the dropping-out thing. Don’t make me say it twice.', 'dadWrong');
@@ -285,6 +308,16 @@ function answer(s: GameState, m: StoryMessage, choiceId: string, expired = false
         s.counters.storageBonus = (s.counters.storageBonus ?? 0) + 400;
         text(s, 'dad', 'Shelves are in. Don’t stack them crooked.', 'garageDone');
       }
+      break;
+    case 'samJoins':
+      if (choiceId === 'hire') hireFriend(s, 'sam');
+      else bond(s, 'sam', -8);
+      break;
+    case 'mayaJoins':
+      if (choiceId === 'hire') {
+        hireFriend(s, 'maya');
+        for (const b of s.brands) b.packScore = Math.min(1, (b.packScore ?? 0.5) + 0.2);
+      } else bond(s, 'maya', -8);
       break;
     case 'class':
       if (choiceId === 'go') {

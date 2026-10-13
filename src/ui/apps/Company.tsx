@@ -8,6 +8,7 @@ import { useGame } from '../../state/store';
 import { AppTitle, Meter, Options } from '../bits';
 import { money } from '../format';
 import { Icon, withIcons } from '../icons';
+import { FundingSection } from '../Funding';
 
 export function Company() {
   const game = useGame((s) => s.game);
@@ -68,6 +69,8 @@ export function Company() {
           <p className="tiny muted">Growing is a choice. A small premium brand with loyal customers is a real strategy too.</p>
         </div>
       )}
+
+      <FundingSection />
 
       <h3><Icon name="bullseye" /> Ambition</h3>
       {game.stage < 2 ? (

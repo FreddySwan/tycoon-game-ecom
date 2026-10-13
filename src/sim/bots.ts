@@ -10,6 +10,7 @@ import {
   incomingUnits,
   listPrice,
   liveProducts,
+  marketOf,
   recentCPA,
   steadyDailyUnits,
   storageCapacity,
@@ -19,6 +20,7 @@ import {
   unitsPerOrder,
 } from './economics';
 import { stageReady } from './progress';
+import type { FocusId } from './data';
 import type { Difficulty, GameState, ModuleId, SkillId, StageId, SupplierId } from './types';
 
 /** Scripted players used for balance testing. */
@@ -55,6 +57,10 @@ function resolveAll(s: GameState) {
       'creator-dm': 'accept',
       bbd: 'join',
       reserve: 'ok',
+      'rival-copy': s.cash > 4500 * s.stage ? 'brand' : 'match',
+      'rival-sale': 'hold',
+      'rival-war': 'wait',
+      'rival-buyout': s.cash > 2_000_000 ? 'buy' : 'pass',
     };
     const want = pick[ev.kind] ?? (ev.kind.startsWith('offer-') ? 'decline' : ev.choices[0].id);
     const choice = ev.choices.find((x) => x.id === want) ?? (ev.kind === 'cash-crisis' ? ev.choices[0] : ev.choices[ev.choices.length - 1]);
@@ -77,10 +83,17 @@ function founder(s: GameState, storeScore = 4) {
   if (hasSkill(s, 'adSpy')) for (const pid of liveProducts(s)) if ((s.products[pid].creativeQuality ?? 0) < 0.8) E.completeCreativeResearch(s, pid, 4);
   for (const m of s.story.messages) {
     if (!m.choices || m.answer) continue;
-    const want = m.beat.startsWith('visit') ? (s.story.helpDay === undefined || s.story.bond.sam > 60 ? 'help' : 'hang') : ({ momMoney: s.cash < 300 ? 'take' : 'decline', graduationMaya: 'go', dadBirthday: 'go', classmates: 'hard', garage: 'yes', class: 'go' } as Record<string, string>)[m.beat];
+    const want = m.beat.startsWith('visit') ? (s.story.helpDay === undefined || s.story.bond.sam > 60 ? 'help' : 'hang') : ({ momMoney: s.cash < 300 ? 'take' : 'decline', graduationMaya: 'go', dadBirthday: 'go', classmates: 'hard', garage: 'yes', class: 'go', samJoins: 'hire', mayaJoins: 'hire' } as Record<string, string>)[m.beat];
     E.answerMessage(s, m.id, want ?? m.choices[0].id);
   }
   if (s.stage >= 2 && s.cash > 25000) for (const who of ['mom', 'sam', 'maya'] as const) E.repayDebt(s, who, s.story.debt[who]);
+  // Plan the week: ads and suppliers early, then operations and retention.
+  if (s.focus?.week !== E.weekOf(s.day) && s.productOrder.length) {
+    const plan: FocusId[] = s.stage === 1 ? ['ads', 'suppliers'] : s.stage <= 3 ? ['ads', 'ops', 'repeat'] : ['ads', 'repeat', 'retail', 'rivals'];
+    E.setFocus(s, plan);
+  }
+  // Brand campaigns once cash piles up.
+  if (s.stage >= 3 && s.cash > 250000 && !(s.campaigns ?? []).some((c) => c.start > s.day - 60)) E.launchCampaign(s, s.stage >= 4 && s.cash > 1_200_000 ? 'billboards' : 'podcast');
 }
 
 function bestSupplier(s: GameState, qty: number): SupplierId {
@@ -124,7 +137,7 @@ function supply(s: GameState, pid: string) {
     const freight = cover < airLead + 8 ? 'air' : 'sea';
     const qty = Math.round((daily * (freight === 'air' ? 30 : 60)) / 100) * 100;
     const cost = qty * (listPrice(s, pid, sup, qty) + 1);
-    const reserve = s.stage === 1 ? 300 : 2000 + trailing(s, 30).pl.payroll / 2;
+    const reserve = s.stage === 1 ? 900 : 2000 + trailing(s, 30).pl.payroll / 2;
     const room = s.credit.unlocked ? Math.min(s.credit.limit * 0.5, s.credit.limit - s.credit.balance) : 0;
     if (s.cash - cost > reserve || room > cost + reserve - s.cash) {
       if (s.cash < cost + reserve && s.credit.unlocked) E.drawCredit(s, cost + reserve - s.cash);
@@ -180,12 +193,12 @@ function staff(s: GameState) {
     const n = Math.min(want, usefulPackers - s.team.packer.count);
     if (n > 0) E.hire(s, 'packer', n);
     else if (s.stage === 2) E.setThirdParty(s, true);
-  } else if (!s.thirdParty && s.team.packer.count > 1 && cap.team > ownDaily * 2.2 && backlog < cap.total * 0.2) {
-    E.fire(s, 'packer', Math.max(1, Math.floor((cap.team - ownDaily * 1.5) / 35)));
+  } else if (!s.thirdParty && s.team.packer.count > 1 && cap.team > ownDaily * 1.7 && backlog < cap.total * 0.2) {
+    E.fire(s, 'packer', Math.max(1, Math.floor((cap.team - ownDaily * 1.35) / 35)));
   }
   if (s.thirdParty && s.stage >= 3 && s.layout.w && cap.stations >= 4) E.setThirdParty(s, false);
   const tickets = s.tickets.queue.reduce((a, t) => a + t.count, 0);
-  if (s.cards.length >= 3 || tickets > supportCapacity(s) * 0.8) E.hire(s, 'support');
+  if ((s.cards.length >= 3 && !s.team.support.count) || tickets > supportCapacity(s) * 0.8) E.hire(s, 'support');
   if (!s.team.marketer.count && trailing(s, 30).profit > 4000) E.hire(s, 'marketer');
   if (s.stage >= 3 && !s.team.buyer.count) E.hire(s, 'buyer');
   if (s.stage >= 3 && !s.team.lead.count && s.team.packer.count >= 3) E.promoteToLead(s) && E.hire(s, 'lead');
@@ -245,6 +258,22 @@ function growth(s: GameState) {
     }
     if (next) E.addProduct(s, next);
   }
+  // Rotate out a worn-out product (costs drifted up, competitors took the demand) when a fresh lead is available.
+  if (s.day % 30 === 0 && liveProducts(s).length >= slots && liveProducts(s).length > 1) {
+    const worn = liveProducts(s)
+      .map((pid) => ({ pid, m: marketOf(s, pid) }))
+      .filter(({ m }) => m.share < 0.72 || m.ad > 2 || m.cost > 1.45)
+      .sort((a, b) => a.m.share / a.m.ad - b.m.share / b.m.ad)[0];
+    if (worn && s.products[worn.pid].inventory.onHand < 150) {
+      const fresh = () => s.revealed.find((id) => !s.products[id] && CATALOG[id]?.trend.kind !== 'fad') ?? Object.keys(s.customDefs).find((id) => !s.products[id]);
+      if (!fresh() && E.digPool(s).length) E.research(s);
+      const next = fresh();
+      if (next) {
+        E.retireProduct(s, worn.pid, true);
+        E.addProduct(s, next);
+      }
+    }
+  }
   // Retire dead fads
   for (const pid of liveProducts(s)) {
     if (def(s, pid).trend.kind === 'fad' && s.day > (def(s, pid).trend.peakDay ?? 0) + 30 && s.products[pid].inventory.onHand < 50) E.retireProduct(s, pid, true);
@@ -299,7 +328,7 @@ export function fullBot(seed: number, days = 720, log?: (line: string) => void):
 }
 
 /** Play a whole game with the scripted player and hand back the final state (dev tool + tests). */
-export function runBot(seed: number, days = 720, log?: (line: string) => void, start?: GameState, until?: (s: GameState) => boolean, difficulty: Difficulty = 'normal'): { s: GameState; result: BotResult } {
+export function runBot(seed: number, days = 720, log?: (line: string) => void, start?: GameState, until?: (s: GameState) => boolean, difficulty: Difficulty = 'normal', onDay?: (s: GameState) => void): { s: GameState; result: BotResult } {
   const s = start ?? E.createGame(seed, difficulty);
   const fresh = !start;
   const stageDays: Partial<Record<StageId, number>> = { 1: 1 };
@@ -331,6 +360,7 @@ export function runBot(seed: number, days = 720, log?: (line: string) => void, s
     resolveAll(s);
     if (s.won && winDay === null) winDay = s.day;
     E.advanceDay(s);
+    onDay?.(s);
     if (!stageDays[s.stage]) stageDays[s.stage] = s.day;
     if (log && (s.day % 30 === 0)) {
       const t = trailing(s, 30);

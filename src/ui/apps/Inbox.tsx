@@ -14,9 +14,9 @@ export function Inbox() {
   const events = game.events.filter((e) => !e.blocking);
 
   function deals() {
-    const active = (game.modifiers ?? []).filter((m) => m.until >= game.day);
+    const active = (game.modifiers ?? []).filter((m) => m.until >= game.day && !m.label.startsWith('Focus:'));
     if (!active.length) return null;
-    const effect: Record<ModKey, string> = { adCost: 'ad costs', adCtr: 'ad clicks', seaFreight: 'sea freight', airFreight: 'air freight', unitCost: 'unit cost', packaging: 'packaging', cvr: 'conversion', creditRate: 'credit interest', creditLimit: 'credit limit', shipping: 'shipping', quality: 'quality' };
+    const effect: Record<ModKey, string> = { adCost: 'ad costs', adCtr: 'ad clicks', seaFreight: 'sea freight', airFreight: 'air freight', unitCost: 'unit cost', packaging: 'packaging', cvr: 'conversion', creditRate: 'credit interest', creditLimit: 'credit limit', shipping: 'shipping', quality: 'quality', packRate: 'packing speed', refunds: 'refunds', repeat: 'repeat orders' };
     return (
       <div className="chat" style={{ marginBottom: 14 }}>
         <b><Icon name="briefcaseCheck" /> Active deals</b>

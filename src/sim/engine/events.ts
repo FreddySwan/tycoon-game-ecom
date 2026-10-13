@@ -1,6 +1,6 @@
 import { dayOfYear } from '../calendar';
 import { CREATORS, ROLES, SUPPLIERS, SUPPLIER_ORDER, WHOLESALE_ACCOUNTS } from '../data';
-import { activeContract, adTrailing, avgDailyOrders, def, effectivePrice, freightPerUnit, liveProducts, listPrice, orderPace, productTrailing, round2, sliceProfit, trailing } from '../economics';
+import { activeContract, adTrailing, avgDailyOrders, def, effectivePrice, freightPerUnit, listPrice, liveProducts, orderPace, productTrailing, round2, sliceProfit, steadyDailyUnits, trailing } from '../economics';
 import { chance, pick, randInt } from '../rng';
 import type { CardChoice, GameEvent, GameState, ModKey, RoleId, SupplierId } from '../types';
 import { type ActionResult, adStat, book, milestone, nextId, notify, spendCash, spendOn } from './core';
@@ -8,12 +8,15 @@ import { creatorHandle } from './marketing';
 import { giveRaise } from './ops';
 import { resolveCashCrisis } from './company';
 import { createPO, signContract } from './sourcing';
+import { resolveRivalEvent } from './rivals';
 
 type NewEvent = Omit<GameEvent, 'id' | 'day'>;
 
 export function pushEvent(s: GameState, ev: NewEvent): void {
   s.events.push({ ...ev, id: nextId(s), day: s.day });
-  notify(s, 'event', ev.title, true);
+  // Offers wait in the inbox; only problems and time-limited events stop the clock.
+  const offer = ev.kind.startsWith('offer-');
+  notify(s, offer ? 'info' : 'event', offer ? `📬 New offer in your inbox: ${ev.title}` : ev.title, !offer);
 }
 
 const c = (id: string, label: string, hint: string): CardChoice => ({ id, label, hint });
@@ -38,16 +41,28 @@ export function rollEvents(s: GameState): void {
   const live = liveProducts(s).filter((id) => s.products[id].sold > 0);
   const doy = dayOfYear(s.day);
 
-  // Holiday warning: ad costs and demand are about to jump.
-  if (doy === 300 && s.stage >= 1 && live.length) {
+  // Holiday planning: commit to a plan while sea freight can still make it.
+  if (doy === 280 && s.stage >= 1 && live.length) {
+    const cost = holidayStockCost(s);
+    s.counters.holidayBase = trailing(s, 30).revenue;
     pushEvent(s, {
       kind: 'holiday',
-      title: 'Holiday season is coming',
-      body: 'From mid-November to Christmas, shoppers buy ~55% more, but ad costs jump ~75%. Stock up now (sea freight takes ~4 weeks), and consider bundles to raise order value.',
+      title: 'Plan the holiday season',
+      body: `From mid-November to Christmas shoppers buy ~55% more, but ad costs jump ~75%. Sea freight ordered now arrives just in time; later, only expensive air freight will. Decide how hard you go.`,
       blocking: false,
-      expiresDay: s.day + 10,
-      choices: [c('bundles', 'Turn on bundles everywhere', 'Bigger orders absorb pricier ads'), c('ok', 'Got it', 'I’ll plan my stock')],
+      expiresDay: s.day + 7,
+      choices: [
+        c('big', `Go big: 6 weeks of extra stock by sea ($${Math.round(cost).toLocaleString()}) + bundles`, 'Capture the surge, tie up cash'),
+        c('bundles', 'Bundles only', 'Bigger orders absorb pricier ads; stock as usual'),
+        c('ok', 'Business as usual', 'Risk stockouts at the peak'),
+      ],
     });
+  }
+  if (doy === 360 && s.counters.holidayBase) {
+    const season = trailing(s, 40).revenue * (30 / 40);
+    const base = s.counters.holidayBase;
+    delete s.counters.holidayBase;
+    notify(s, 'info', `🎁 Holiday recap: $${Math.round(season).toLocaleString()}/month during the season vs $${Math.round(base).toLocaleString()} in October (${season >= base ? '+' : ''}${Math.round(((season - base) / Math.max(1, base)) * 100)}%).`, true);
   }
 
   // Viral moments beyond the first.
@@ -66,8 +81,8 @@ export function rollEvents(s: GameState): void {
     });
   }
 
-  // Copycats on successful, non-exclusive products.
-  for (const pid of live) {
+  // Copycats are now named rival brands (rivals.ts); this anonymous version is retired.
+  for (const pid of [] as string[]) {
     const p = s.products[pid];
     if (def(s, pid).exclusive || p.copycat > 0.05 || s.day - p.addedDay < 45 || avgDailyOrders(s, pid, 7) < 15) continue;
     if (!cooled(s, `copycat-${pid}`, 120) || !chance(s, 0.015)) continue;
@@ -187,7 +202,7 @@ export function rollEvents(s: GameState): void {
   }
 
   // Wholesale inquiries.
-  if (s.stage >= 4 && live.length && !open(s, 'wholesale') && cooled(s, 'wholesale', 25) && chance(s, 0.05)) {
+  if (s.stage >= ((s.counters.retailPitchUntil ?? -1) >= s.day ? 3 : 4) && live.length && !open(s, 'wholesale') && cooled(s, 'wholesale', (s.counters.retailPitchUntil ?? -1) >= s.day ? 7 : 25) && chance(s, (s.counters.retailPitchUntil ?? -1) >= s.day ? 0.25 : 0.05)) {
     const pid = live.reduce((a, b) => (avgDailyOrders(s, a) > avgDailyOrders(s, b) ? a : b));
     cool(s, 'wholesale');
     const qty = Math.max(500, Math.round((avgDailyOrders(s, pid, 14) * 25) / 100) * 100);
@@ -264,6 +279,12 @@ export function resolveEvent(s: GameState, eventId: number, choiceId: string): A
   if (!ev) return 'Already handled.';
   const d = ev.data ?? {};
   const pid = d.pid as string | undefined;
+  if (ev.kind.startsWith('rival-')) {
+    const err = resolveRivalEvent(s, ev, choiceId);
+    if (err) return err;
+    s.events = s.events.filter((e) => e.id !== eventId);
+    return null;
+  }
   if (ev.kind.startsWith('offer-')) {
     const err = resolveOffer(s, ev, choiceId);
     if (err) return err;
@@ -303,7 +324,17 @@ export function resolveEvent(s: GameState, eventId: number, choiceId: string): A
       }
       break;
     case 'holiday':
-      if (choiceId === 'bundles') for (const id of liveProducts(s)) s.products[id].bundle = true;
+      if (choiceId === 'bundles' || choiceId === 'big') for (const id of liveProducts(s)) s.products[id].bundle = true;
+      if (choiceId === 'big') {
+        for (const id of liveProducts(s)) {
+          const p = s.products[id];
+          if (!p.sold) continue;
+          const sup = (p.reorder.supplierId ?? [...s.pos].reverse().find((x) => x.productId === id)?.supplierId ?? 'brightway') as SupplierId;
+          const qty = Math.max(SUPPLIERS[sup].moq, Math.round((steadyDailyUnits(s, id) * 1.6 * 42) / 100) * 100);
+          if (s.cash < qty * listPrice(s, id, sup, qty) * 0.35) continue;
+          createPO(s, id, sup, qty, listPrice(s, id, sup, qty), 'sea', false);
+        }
+      }
       break;
     case 'viral':
       if (!pid || !s.products[pid]) break;
@@ -442,6 +473,13 @@ export function randomShipDelay(s: GameState, supplierId: SupplierId): number {
 
 
 // ───────────────────────────── business offers ─────────────────────────────
+
+/** What "go big" for the holidays would cost up front. */
+function holidayStockCost(s: GameState): number {
+  return liveProducts(s)
+    .filter((id) => s.products[id].sold)
+    .reduce((a, id) => a + Math.round((steadyDailyUnits(s, id) * 1.6 * 42) / 100) * 100 * listPrice(s, id, 'brightway', 1000), 0);
+}
 
 export function addMod(s: GameState, key: ModKey, mult: number, days: number, label: string, scope?: string): void {
   s.modifiers = (s.modifiers ?? []).filter((m) => m.until >= s.day);

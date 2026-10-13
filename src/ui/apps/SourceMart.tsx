@@ -1,26 +1,8 @@
 import { useState } from 'react';
 import { AIR_DAYS, INSPECTION_COST, SAMPLE_COST, SEA_DAYS, STARTING_CASH, SUPPLIERS, SUPPLIER_ORDER, WIN_REORDER_QTY } from '../../sim/data';
 import { activeContract, avgDailyOrders, def, freightPerUnit, incomingUnits, listPrice, liveProducts, steadyDailyUnits, stockDays, unitsPerOrder } from '../../sim/economics';
-import {
-  acceptCounter,
-  canSignContract,
-  cancelNegotiation,
-  contractTerms,
-  coverDays,
-  hasPaymentTerms,
-  leadTime,
-  orderCost,
-  orderSample,
-  placeOrder,
-  proposePrice,
-  quantityOptions,
-  sampleNote,
-  setReorderRule,
-  signContract,
-  startNegotiation,
-  termsLabel,
-} from '../../sim/engine';
-import type { Freight, SupplierId } from '../../sim/types';
+import { acceptCounter, cancelNegotiation, canSignContract, contractTerms, coverDays, hasPaymentTerms, leadTime, LEVERS, orderCost, orderSample, placeOrder, proposePrice, quantityOptions, sampleNote, setReorderRule, signContract, startNegotiation, termsLabel, useLever, walkAway } from '../../sim/engine';
+import type { Freight, NegotiationLever, SupplierId } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle, Meter, NumberInput, Options, Pips, Toggle } from '../bits';
 import { ProductImage } from '../photos';
@@ -265,8 +247,8 @@ function Negotiation() {
         <h3 style={{ margin: 0 }}>
           {withIcons(sup.avatar)} {sup.contact} · {def(game, n.productId).name}
         </h3>
-        <button className="small ghost" onClick={() => act(cancelNegotiation)}>
-          Close
+        <button className="small ghost" onClick={() => act(n.agreedPrice === null ? walkAway : cancelNegotiation)} title={n.agreedPrice === null ? 'Suppliers who like you sometimes come back with a better offer' : ''}>
+          {n.agreedPrice === null ? 'Walk away' : 'Close'}
         </button>
       </div>
       <p className="tiny muted">Quantity</p>
@@ -288,11 +270,31 @@ function Negotiation() {
           </div>
           <input type="range" min={Math.round(list * 70)} max={Math.round(list * 100)} value={Math.round(offer * 100)} onChange={(e) => setOffer(+e.target.value / 100)} />
           <div className="row">
-            <button className="primary" onClick={() => act(proposePrice, offer)} disabled={n.final}>
+            <button className="primary" onClick={() => act(proposePrice, offer)} disabled={n.final || n.closed}>
               Send offer
             </button>
             {n.counter !== null && <button onClick={() => act(acceptCounter)}>Accept {money(n.counter, true)}</button>}
+            <span className="tiny muted">
+              Patience:{' '}
+              {Array.from({ length: Math.max(0, n.patience ?? 0) }, (_, i) => (
+                <Icon key={i} name="happy" color="#c0712c" />
+              ))}
+              {n.closed && ' gone'}
+            </span>
           </div>
+          {!n.closed && (
+            <div className="row" style={{ gap: 4, marginTop: 6 }}>
+              <span className="tiny muted">Offer something else:</span>
+              {(Object.keys(LEVERS) as NegotiationLever[])
+                .filter((l) => l !== 'upfront' || terms)
+                .map((l) => (
+                  <button key={l} className="small" disabled={n.levers?.includes(l)} title={LEVERS[l].hint} onClick={() => act(useLever, l)}>
+                    {LEVERS[l].label}
+                  </button>
+                ))}
+            </div>
+          )}
+          <p className="tiny muted" style={{ margin: '4px 0 0' }}>Listen to how they react: “so close” means you’re within a few percent of their limit. Lowballs cost patience and trust.</p>
         </>
       ) : (
         <>

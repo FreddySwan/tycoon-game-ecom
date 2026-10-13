@@ -7,6 +7,9 @@ import { MarketScan } from './MarketScan';
 import { DigReveal, Investigate } from './Discovery';
 import { CreativeResearch, StoreBuilder } from './Builders';
 import { Phone, StoryScene } from './Phone';
+import { SavesModal } from './Saves';
+import { EndingModal } from './Ending';
+import { WeekPlanner } from './Week';
 import type { Difficulty, MilestoneId, PhotoChoice, SupplierId } from '../sim/types';
 import { sfx } from '../state/sound';
 import { useGame } from '../state/store';
@@ -24,6 +27,7 @@ export function Modals() {
   if (game.status === 'lost') return <Lost />;
   if (crisis) return <Crisis />;
   if (game.story?.scenes?.length && !modal) return <StoryScene />;
+  if (game.ending && (!game.ending.seen || game.ending.id === 'sold') && !modal) return <EndingModal />;
   if (ambition && !modal) return <Ambition id={ambition} />;
   if (game.won && !game.flags.winSeen && !modal) return <Won />;
   if (!modal) return null;
@@ -50,6 +54,10 @@ export function Modals() {
       return <CreativeResearch key={modal.productId} productId={modal.productId} />;
     case 'phone':
       return <Phone />;
+    case 'saves':
+      return <SavesModal />;
+    case 'week':
+      return <WeekPlanner />;
   }
 }
 
@@ -538,8 +546,8 @@ function Lost() {
   return (
     <Shell center>
       <div className="huge"><Icon name="trendingDown" /></div>
-      <h2>The business ran out of cash</h2>
-      <p>It happens to real founders all the time. Here’s what the numbers say:</p>
+      <h2>{game.flags.ousted ? 'The board replaced you as CEO' : 'The business ran out of cash'}</h2>
+      <p>{game.flags.ousted ? 'You took their money and missed their targets twice. The company carries on without you. Here’s what the numbers say:' : 'It happens to real founders all the time. Here’s what the numbers say:'}</p>
       <Recap />
       <div className="callout" style={{ textAlign: 'left' }}>
         {locked > 1000 && <p style={{ margin: '0 0 6px' }}><Icon name="archive" /> {money(locked)} was locked up in stock when the cash ran out.</p>}

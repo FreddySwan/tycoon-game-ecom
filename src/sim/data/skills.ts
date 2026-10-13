@@ -145,6 +145,8 @@ export interface DifficultyDef {
   saturation: number;
   /** Daily erosion of a product's share of demand as competitors copy it. */
   shareDrift: number;
+  /** How often rivals copy you, enter your categories and start ad wars. */
+  rivalAggression: number;
 }
 
 export const DIFFICULTY: Record<Difficulty, DifficultyDef> = {
@@ -157,16 +159,18 @@ export const DIFFICULTY: Record<Difficulty, DifficultyDef> = {
     shockChance: 0.001,
     saturation: 0.4,
     shareDrift: 0.0001,
+    rivalAggression: 0.5,
   },
   normal: {
     name: 'Normal',
     blurb: 'Markets drift. A product’s ads get pricier as you and copycats scale it, suppliers raise prices now and then.',
-    adDrift: 0.0005,
-    costDrift: 0.00018,
+    adDrift: 0.0004,
+    costDrift: 0.00015,
     volatility: 0.006,
     shockChance: 0.003,
     saturation: 1,
-    shareDrift: 0.0006,
+    shareDrift: 0.0002,
+    rivalAggression: 1,
   },
   hard: {
     name: 'Hard',
@@ -176,6 +180,7 @@ export const DIFFICULTY: Record<Difficulty, DifficultyDef> = {
     volatility: 0.012,
     shockChance: 0.007,
     saturation: 1.8,
-    shareDrift: 0.0013,
+    shareDrift: 0.0008,
+    rivalAggression: 1.6,
   },
 };

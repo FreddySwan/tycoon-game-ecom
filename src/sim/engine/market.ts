@@ -26,11 +26,11 @@ export function marketDrift(s: GameState): void {
       if (chance(s, 0.6)) {
         const jump = 1.12 + Math.abs(normal(s)) * 0.1;
         m.ad *= jump;
-        notify(s, 'event', `${pick(s, AD_SHOCKS)} ${def(s, pid).name}. Ad costs +${Math.round((jump - 1) * 100)}%.`, true);
+        notify(s, 'info', `${pick(s, AD_SHOCKS)} ${def(s, pid).name}. Ad costs +${Math.round((jump - 1) * 100)}%.`, true);
       } else {
         const jump = 1.08 + Math.abs(normal(s)) * 0.06;
         m.cost *= jump;
-        notify(s, 'event', `${pick(s, COST_SHOCKS)} ${def(s, pid).name}. Unit cost +${Math.round((jump - 1) * 100)}% on new orders.`, true);
+        notify(s, 'info', `${pick(s, COST_SHOCKS)} ${def(s, pid).name}. Unit cost +${Math.round((jump - 1) * 100)}% on new orders.`, true);
       }
     }
     m.ad = Math.min(4, Math.max(0.75, m.ad));

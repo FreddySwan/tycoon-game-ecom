@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as E from '../sim/engine';
 import type { GameState } from '../sim/types';
 import { sfx } from './sound';
+import { activeSlot, autosave, migrateLegacy, onSaveError, readSlot } from './persist';
 
 export type TabId =
   | 'products'
@@ -28,6 +29,8 @@ export type Modal =
   | { kind: 'build'; brandId: number }
   | { kind: 'creative'; productId: string }
   | { kind: 'phone' }
+  | { kind: 'saves' }
+  | { kind: 'week' }
   | { kind: 'pack' }
   | { kind: 'milestone'; text: string }
   | { kind: 'report' }
@@ -36,7 +39,6 @@ export type Modal =
 export type Speed = 0 | 1 | 2 | 4 | 8;
 
 export const DAY_MS = 20000;
-const SAVE_KEY = 'unboxed-save-v2';
 const ADMIN_KEY = 'unboxed-admin';
 
 function adminOnLoad(): boolean {
@@ -76,25 +78,31 @@ interface UIState {
   toggleAdmin: () => void;
   /** Swap in a whole new game state (admin stage jumps). */
   replaceGame: (g: GameState) => void;
+  /** Load a saved game without re-saving it. */
+  hydrate: (g: GameState) => void;
+  saveError: string | null;
+  /** Which notification categories stop the clock. */
+  pauses: E.PauseSettings;
+  setPause: (k: keyof E.PauseSettings, on: boolean) => void;
 }
 
-function load(): GameState | null {
+function loadPauses(): E.PauseSettings {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw) as GameState;
-    return s.version === 2 ? E.migrate(s) : null;
+    return { ...E.DEFAULT_PAUSES, ...JSON.parse(localStorage.getItem('unboxed-pauses') ?? '{}') };
   } catch {
-    return null;
+    return { ...E.DEFAULT_PAUSES };
   }
 }
 
 function save(s: GameState) {
-  try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(s));
-  } catch {
-    /* storage unavailable: play on without saving */
-  }
+  autosave(s);
+}
+
+/** Startup: move any old localStorage save into IndexedDB, then load the active slot. */
+export async function boot(): Promise<void> {
+  await migrateLegacy();
+  const s = await readSlot(activeSlot()).catch(() => null);
+  if (s && s.version === 2) useGame.getState().hydrate(E.migrate(s));
 }
 
 /** Turn fresh notices into modals (milestones, month reports), queueing them if something is open. */
@@ -104,7 +112,7 @@ function modalsFor(state: UIState, next: GameState): Partial<UIState> {
   for (const n of fresh) {
     const quiet = n.text === E.MILESTONE_LABELS.first_profitable_reorder || n.text === 'Ambition achieved!';
     if (n.kind === 'milestone' && !quiet) wanted.push({ kind: 'milestone', text: n.text });
-    if (n.text.startsWith('📊 Month') && n.pause) wanted.push({ kind: 'report' });
+    if (n.text.startsWith('📊 Month') && n.pause && state.pauses.report) wanted.push({ kind: 'report' });
   }
   const seen = next.notices.length ? next.notices[next.notices.length - 1].id : state.seenNotice;
   if (!wanted.length) return { seenNotice: seen };
@@ -119,7 +127,7 @@ function firstLive(s: GameState): string | null {
   return s.productOrder.find((id) => s.products[id] && !s.products[id].retired) ?? null;
 }
 
-const initial = load() ?? E.createGame();
+const initial = E.createGame();
 
 export const useGame = create<UIState>((set, get) => ({
   game: initial,
@@ -134,6 +142,17 @@ export const useGame = create<UIState>((set, get) => ({
   seenNotice: initial.notices.length ? initial.notices[initial.notices.length - 1].id : 0,
   queued: [],
   admin: adminOnLoad(),
+  saveError: null,
+  pauses: loadPauses(),
+  setPause: (k, on) => {
+    const pauses = { ...get().pauses, [k]: on };
+    try {
+      localStorage.setItem('unboxed-pauses', JSON.stringify(pauses));
+    } catch {
+      /* session only */
+    }
+    set({ pauses });
+  },
 
   act: (fn, ...args) => {
     const s = structuredClone(get().game);
@@ -152,7 +171,7 @@ export const useGame = create<UIState>((set, get) => ({
 
   tick: (ms) => {
     const { speed, dayProgress, game } = get();
-    if (!speed || E.isBlocked(game) || get().modal || game.story?.scenes?.length) return;
+    if (!speed || E.isBlocked(game) || get().modal || game.story?.scenes?.length || (game.ending && (!game.ending.seen || game.ending.id === 'sold'))) return;
     const p = dayProgress + (ms * speed) / DAY_MS;
     if (p < 1) {
       set({ dayProgress: p });
@@ -168,7 +187,7 @@ export const useGame = create<UIState>((set, get) => ({
   skip: () => {
     const game = get().game;
     const next = structuredClone(game);
-    E.skipToNextEvent(next);
+    E.skipToNextEvent(next, 30, get().pauses);
     advanced(game, next);
   },
 
@@ -199,6 +218,7 @@ export const useGame = create<UIState>((set, get) => ({
     }
     set({ admin });
   },
+  hydrate: (g) => set({ game: g, speed: 0, dayProgress: 0, modal: null, queued: [], seenNotice: g.notices.length ? g.notices[g.notices.length - 1].id : 0, product: firstLive(g), brand: g.brands[0].id }),
   replaceGame: (g) => {
     const old = get().game.flags;
     for (const f of ['adminCash', 'adminHours']) if (old[f]) g.flags[f] = true;
@@ -211,9 +231,11 @@ export const useGame = create<UIState>((set, get) => ({
 function advanced(prev: GameState, next: GameState) {
   const state = useGame.getState();
   const fresh = next.notices.filter((n) => n.id > state.seenNotice);
-  const pause = fresh.some((n) => n.pause) || E.isBlocked(next);
+  const pause = fresh.some((n) => E.pausesFor(n, state.pauses)) || E.isBlocked(next);
   if (!state.muted && next.lastDayOrders > 0 && !fresh.some((n) => n.kind === 'milestone')) sfx.orders(Math.min(next.lastDayOrders, 8));
   const product = state.product && next.products[state.product] && !next.products[state.product].retired ? state.product : firstLive(next);
   useGame.setState({ game: next, product, dayProgress: 0, speed: pause ? 0 : state.speed, ...modalsFor(state, next) });
   if (next.day !== prev.day) save(next);
 }
+
+onSaveError((msg) => useGame.setState({ saveError: msg, toast: msg }));

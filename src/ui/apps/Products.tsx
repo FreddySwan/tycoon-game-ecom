@@ -4,7 +4,8 @@ import { averageRating, avgDailyOrders, def, hasSkill, liveProducts, marketOf, r
 import { addProduct, assignBrand, digHours, digPool, productSlots, research, researchLevel, retireProduct, toggleShortlist } from '../../sim/engine';
 import type { CategoryId, GameState } from '../../sim/types';
 import { useGame } from '../../state/store';
-import { AppTitle, Pips, Sparkline } from '../bits';
+import { AppTitle, Pips, Sparkline, SubTabs } from '../bits';
+import { Market } from './Market';
 import { money } from '../format';
 import { ProductImage } from '../photos';
 import { Icon, withIcons } from '../icons';
@@ -24,6 +25,7 @@ export function Products() {
   const setProduct = useGame((s) => s.setProduct);
   const setModal = useGame((s) => s.setModal);
   const [cat, setCat] = useState<CategoryId | 'all'>('all');
+  const [view, setView] = useState<'products' | 'market'>('products');
   const live = liveProducts(game);
   const candidates = game.revealed.filter((id) => (!game.products[id] || game.products[id].retired) && def(game, id));
   const slots = productSlots(game);
@@ -57,6 +59,23 @@ export function Products() {
             : `You sell ${live.length} of ${slots === 99 ? '∞' : slots} possible products at this stage.`
         }
       />
+      {!first && (
+        <SubTabs
+          value={view}
+          onChange={setView}
+          tabs={[
+            { id: 'products', label: 'Products & research' },
+            { id: 'market', label: `Market & rivals${(game.rivals ?? []).some((r) => r.exitedDay === undefined && r.targets && game.products[r.targets] && !game.products[r.targets].retired) ? ' (!)' : ''}` },
+          ]}
+        />
+      )}
+      {view === 'market' && !first ? <Market /> : productsView()}
+    </div>
+  );
+
+  function productsView() {
+    return (
+      <>
 
       {live.length > 0 && (
         <>
@@ -224,8 +243,9 @@ export function Products() {
         {shown.map((id) => card(id))}
         {!shown.length && !first && <p className="muted">No leads on the board. Dig to find more; new trends turn up over time and as you grow.</p>}
       </div>
-    </div>
-  );
+      </>
+    );
+  }
 
   function marketCell(id: string) {
     const m = marketOf(game, id);

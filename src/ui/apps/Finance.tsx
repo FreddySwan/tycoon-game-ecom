@@ -3,7 +3,7 @@ import { Fragment, useState } from 'react';
 import { CHANNELS } from '../../sim/data';
 import { cashForecast, cashPools, channelTrailing, def, emptyPL, payrollMonthly, periodPL, productTrailing, profitOf, upcomingPayouts } from '../../sim/economics';
 import type { PeriodKind } from '../../sim/calendar';
-import type { ChannelId, DailyRecord, GameState } from '../../sim/types';
+import type { ArchiveMonth, ChannelId, DailyRecord, GameState } from '../../sim/types';
 import { Options } from '../bits';
 import { ProductImage } from '../photos';
 import { SliceTable } from '../SliceTable';
@@ -26,6 +26,7 @@ const ROWS: { k: PLCategory; label: string }[] = [
   { k: 'rent', label: 'Rent & storage' },
   { k: 'other', label: 'Other (samples, setup, overhead)' },
   { k: 'interest', label: 'Interest' },
+  { k: 'tax', label: 'Income tax' },
 ];
 
 const shortDate = (day: number) => dateLabel(day).replace(/, Y\d+$/, '');
@@ -41,8 +42,8 @@ interface Bucket {
   cash: number;
 }
 
-/** History grouped into days (last 30), weeks (last 13) or months (last 12). */
-function buckets(history: DailyRecord[], range: Range): Bucket[] {
+/** History grouped into days (last 30), weeks (last 13) or months (last 12, including archived months). */
+function buckets(history: DailyRecord[], range: Range, archive: ArchiveMonth[] = []): Bucket[] {
   const groups: { first: number; last: number; recs: DailyRecord[]; label?: string }[] = [];
   if (range === 'days') for (const r of history.slice(-30)) groups.push({ first: r.day, last: r.day, recs: [r] });
   else if (range === 'weeks') {
@@ -53,6 +54,8 @@ function buckets(history: DailyRecord[], range: Range): Bucket[] {
     }
   } else {
     const byMonth = new Map<number, (typeof groups)[number]>();
+    // Archived months carry their totals in one row.
+    for (const m of archive) byMonth.set(m.key, { first: m.fromDay, last: m.toDay, recs: [{ ...m, day: m.toDay } as unknown as DailyRecord], label: periodOf(m.fromDay, 'month').label });
     for (const r of history) {
       const { key, label } = periodOf(r.day, 'month');
       const g = byMonth.get(key) ?? { first: r.day, last: r.day, recs: [], label };
@@ -64,7 +67,7 @@ function buckets(history: DailyRecord[], range: Range): Bucket[] {
   }
   return groups.map((g) => {
     const pl = emptyPL();
-    for (const r of g.recs) for (const k of Object.keys(pl) as PLCategory[]) pl[k] += r.pl[k];
+    for (const r of g.recs) for (const k of Object.keys(pl) as PLCategory[]) pl[k] += r.pl[k] ?? 0;
     const profit = profitOf(pl);
     const label = g.label ?? (g.first === g.last ? dateLabel(g.first) : `${shortDate(g.first)} – ${dateLabel(g.last)}`);
     return { axis: g.label ?? shortDate(g.first), label, revenue: pl.revenue, expenses: pl.revenue - profit, profit, cash: g.recs[g.recs.length - 1].cash };
@@ -74,7 +77,7 @@ function buckets(history: DailyRecord[], range: Range): Bucket[] {
 /** Revenue, expenses and profit over time. */
 function TrendChart({ game }: { game: GameState }) {
   const [range, setRange] = useState<Range>('days');
-  const data = buckets(game.history, range);
+  const data = buckets(game.history, range, game.archive);
   return (
     <>
       <div className="row between" style={{ marginTop: 14 }}>

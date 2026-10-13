@@ -44,7 +44,8 @@ export type PLCategory =
   | 'payroll'
   | 'rent'
   | 'other'
-  | 'interest';
+  | 'interest'
+  | 'tax';
 export type ModuleId =
   | 'header'
   | 'hero'
@@ -81,6 +82,8 @@ export type MilestoneId =
   | 'first_exclusive'
   | 'first_international_sale'
   | 'second_brand'
+  | 'board_happy'
+  | 'rival_acquired'
   | 'ambition';
 
 // ───────────────────────────── static definitions ─────────────────────────────
@@ -124,7 +127,7 @@ export interface PhotoChoice {
   zoom?: number;
 }
 
-export type ModKey = 'adCost' | 'adCtr' | 'seaFreight' | 'airFreight' | 'unitCost' | 'packaging' | 'cvr' | 'creditRate' | 'creditLimit' | 'shipping' | 'quality';
+export type ModKey = 'adCost' | 'adCtr' | 'seaFreight' | 'airFreight' | 'unitCost' | 'packaging' | 'cvr' | 'creditRate' | 'creditLimit' | 'shipping' | 'quality' | 'packRate' | 'refunds' | 'repeat';
 
 export interface Modifier {
   id: number;
@@ -311,7 +314,14 @@ export interface Negotiation {
   agreedPrice: number | null;
   final: boolean;
   lastMessage: string;
+  /** Lowballs left before the supplier ends the call. */
+  patience?: number;
+  /** Non-price levers you've offered (each lowers their floor). */
+  levers?: NegotiationLever[];
+  closed?: boolean;
 }
+
+export type NegotiationLever = 'flexible' | 'repeat' | 'upfront';
 
 export type POStatus = 'production' | 'transit' | 'arrived';
 
@@ -510,6 +520,24 @@ export interface Receivable {
   label: string;
 }
 
+/** A calendar month of history, rolled up once its days are older than the daily window. */
+export interface ArchiveMonth {
+  key: number;
+  fromDay: number;
+  toDay: number;
+  days: number;
+  cash: number;
+  orders: number;
+  repeatOrders: number;
+  pl: Record<PLCategory, number>;
+  plSub: Partial<Record<PLCategory, Record<string, number>>>;
+  channelRevenue: Partial<Record<ChannelId, number>>;
+  brandRevenue: Record<number, number>;
+  brandCost: Record<number, number>;
+  productPL: Record<string, Slice>;
+  channelPL: Partial<Record<ChannelId, Slice>>;
+}
+
 export interface DailyRecord {
   day: number;
   cash: number;
@@ -561,12 +589,17 @@ export interface Team {
   wageMult: number;
 }
 
+export type Trait = 'frugal' | 'creative' | 'steady' | 'ambitious' | 'loyal';
+
 export interface Person {
   role: RoleId;
   name: string;
   hiredDay: number;
   morale: number;
   promoted: boolean;
+  trait?: Trait;
+  /** Sam or Maya. */
+  friend?: CharacterId;
 }
 
 export interface Contract {
@@ -640,7 +673,10 @@ export interface GameState {
   receivables: Receivable[];
   /** Money owed to suppliers on net terms (not an expense: it's inventory). */
   payables: Receivable[];
+  /** Full daily records for the most recent days only (see HISTORY_DAYS). */
   history: DailyRecord[];
+  /** Older days rolled up by calendar month, oldest first. */
+  archive?: ArchiveMonth[];
   reports: MonthReport[];
   milestones: Partial<Record<MilestoneId, number>>;
   notices: Notice[];
@@ -675,6 +711,17 @@ export interface GameState {
   discountFatigue: number;
   flags: Record<string, boolean>;
   counters: Record<string, number>;
+  /** This week's founder focus (FOCUS ids) and the week it was set for. */
+  focus?: { week: number; picks: string[] };
+  /** Big brand campaigns running (podcasts, billboards, TV). */
+  campaigns?: { kind: string; start: number; days: number; perDay: number }[];
+  /** Venture funding: rounds raised and the board's current target. */
+  funding?: { raised: string[]; interest: number; board?: { round: string; target: number; deadline: number; warned?: boolean } };
+  /** How the story ended, once it has. */
+  ending?: { id: EndingId; day: number; payout?: number; seen?: boolean };
+  /** Named rival brands competing in each category. */
+  rivals: Rival[];
+  rivalLog: { day: number; rivalId: number; text: string }[];
   /** Courses, software and gear bought in SkillUp. */
   skills: Partial<Record<SkillId, SkillState>>;
   difficulty: Difficulty;
@@ -764,3 +811,35 @@ export interface StoryState {
   /** Day you're out (graduation, family dinner): fewer founder hours. */
   awayDay?: number;
 }
+
+// ───────────────────────────── rivals ─────────────────────────────
+
+export type RivalStyle = 'incumbent' | 'copier' | 'premium' | 'blitzer';
+
+export interface Rival {
+  id: number;
+  name: string;
+  category: CategoryId;
+  style: RivalStyle;
+  /** Price relative to the category's typical price (1 = same as the reference). */
+  price: number;
+  rating: number;
+  reviews: number;
+  /** Ad pressure, 0..3: bids up auctions for everyone in the category. */
+  ads: number;
+  /** Brand and distribution strength, ~0.3..3. */
+  strength: number;
+  /** Product of yours they copied. */
+  targets?: string;
+  saleUntil?: number;
+  outUntil?: number;
+  pushUntil?: number;
+  enteredDay: number;
+  exitedDay?: number;
+  /** Days of funding left (blitzers). */
+  runway?: number;
+  /** Your old classmate's company. */
+  founder?: boolean;
+}
+
+export type EndingId = 'sold' | 'unicorn' | 'king' | 'beloved' | 'burnout' | 'builder';

@@ -12,7 +12,9 @@ export interface Check {
 const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
 export function stageChecks(s: GameState, stage: StageId): Check[] {
-  const m = trailing(s, 30);
+  const t = trailing(s, 30);
+  // Profit before income tax, so the quarter's tax bill doesn't flip a stage gate on and off.
+  const m = { ...t, profit: t.profit + (t.pl.tax ?? 0) };
   if (stage === 2) {
     const a = { label: 'Monthly profit ≥ $3,000', value: money(m.profit), done: m.profit >= 3000, progress: m.profit / 3000 };
     const b = { label: 'or 1,000 orders shipped', value: s.shipped.toLocaleString(), done: s.shipped >= 1000, progress: s.shipped / 1000 };
@@ -21,14 +23,14 @@ export function stageChecks(s: GameState, stage: StageId): Check[] {
   if (stage === 3) {
     const steady = liveProducts(s).filter((id) => avgDailyOrders(s, id, 14) >= 5).length;
     return [
-      { label: 'Monthly profit ≥ $15,000', value: money(m.profit), done: m.profit >= 15000, progress: m.profit / 15000 },
+      { label: 'Monthly profit before tax ≥ $15,000', value: money(m.profit), done: m.profit >= 15000, progress: m.profit / 15000 },
       { label: '2+ products selling 5+ a day', value: `${steady}`, done: steady >= 2, progress: steady / 2 },
     ];
   }
   if (stage === 4) {
     return [
-      { label: 'Monthly profit ≥ $60,000', value: money(m.profit), done: m.profit >= 60000, progress: m.profit / 60000 },
-      { label: '10,000 orders in 30 days', value: m.orders.toLocaleString(), done: m.orders >= 10000, progress: m.orders / 10000 },
+      { label: 'Monthly profit before tax ≥ $40,000', value: money(m.profit), done: m.profit >= 40000, progress: m.profit / 40000 },
+      { label: '6,500 orders in 30 days', value: m.orders.toLocaleString(), done: m.orders >= 6500, progress: m.orders / 6500 },
     ];
   }
   if (stage === 5) {

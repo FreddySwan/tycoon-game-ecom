@@ -17,7 +17,7 @@ import {
 } from '../data';
 import { activeContract, audiences, def, freightPerUnit, hasSkill, incomingUnits, listPrice, liveProducts, mod, round2, steadyDailyUnits } from '../economics';
 import { chance, normal, pick } from '../rng';
-import type { Freight, GameState, ReorderRule, SupplierId } from '../types';
+import type { Freight, GameState, NegotiationLever, ReorderRule, SupplierId } from '../types';
 import { type ActionResult, book, milestone, newProduct, nextId, notify, spendCash, spendOn, useHours } from './core';
 
 // ───────────────────────────── products ─────────────────────────────
@@ -191,24 +191,38 @@ export function quantityOptions(supplierId: SupplierId): number[] {
   return [...new Set([moq, 500, 1000, 3000, 10000].filter((q) => q >= moq))];
 }
 
+const PATIENCE = { folds: 4, fair: 3, firm: 2 } as const;
+
+/** What each non-price lever is worth to the supplier (multiplies their floor). */
+export const LEVERS: Record<NegotiationLever, { label: string; hint: string; mult: number }> = {
+  flexible: { label: 'We’re flexible on timing', hint: '+7 days production, ~2% off', mult: 0.98 },
+  repeat: { label: 'I’ll reorder within 60 days', hint: '~3% off; breaking the promise costs trust', mult: 0.97 },
+  upfront: { label: 'I’ll pay 100% up front', hint: '~3% off, no payment terms on this order', mult: 0.97 },
+};
+
 export function startNegotiation(s: GameState, pid: string, supplierId: SupplierId, qty: number): ActionResult {
   if (!s.products[pid]) return 'Add the product first.';
   const sup = SUPPLIERS[supplierId];
   if (sup.unlockStage > s.stage) return `${sup.company} only works with bigger businesses.`;
   if (qty < sup.moq) return 'Below minimum order quantity.';
   const list = listPrice(s, pid, supplierId, qty);
+  // Walked away recently? They've had time to think.
+  const reconsidered = (s.counters[`walked-${supplierId}`] ?? -99) >= s.day - 3;
   s.negotiation = {
     productId: pid,
     supplierId,
     qty,
     round: 0,
-    counter: null,
+    counter: reconsidered ? round2(supplierFloor(s, pid, supplierId, qty) * 1.01) : null,
     agreedPrice: null,
     final: false,
-    lastMessage: `Hi! ${qty.toLocaleString()} units is $${list.toFixed(2)} each. ${
-      sup.style === 'folds' ? 'Very good price, my friend!' : sup.style === 'fair' ? 'Happy to discuss.' : 'Our prices reflect our quality.'
-    }`,
+    patience: PATIENCE[sup.style],
+    levers: [],
+    lastMessage: reconsidered
+      ? `About last time… we talked it over. We can do $${round2(supplierFloor(s, pid, supplierId, qty) * 1.01).toFixed(2)} for ${qty.toLocaleString()} units.`
+      : `Hi! ${qty.toLocaleString()} units is $${list.toFixed(2)} each. ${sup.style === 'folds' ? 'Very good price, my friend!' : sup.style === 'fair' ? 'Happy to discuss.' : 'Our prices reflect our quality.'}`,
   };
+  if (reconsidered) delete s.counters[`walked-${supplierId}`];
   return null;
 }
 
@@ -216,12 +230,34 @@ export function supplierFloor(s: GameState, pid: string, supplierId: SupplierId,
   const sup = SUPPLIERS[supplierId];
   const rel = s.relationship[supplierId];
   const buyer = s.team.buyer.count > 0 ? 0.03 : 0;
-  return round2(listPrice(s, pid, supplierId, qty) * (1 - sup.room * (0.6 + rel / 250) - buyer));
+  const levers = (s.negotiation?.supplierId === supplierId ? (s.negotiation.levers ?? []) : []).reduce((a, l) => a * LEVERS[l].mult, 1);
+  return round2(listPrice(s, pid, supplierId, qty) * (1 - sup.room * (0.6 + rel / 250) - buyer) * levers);
+}
+
+/** Offer something other than money: timing, loyalty or cash. */
+export function useLever(s: GameState, lever: NegotiationLever): ActionResult {
+  const n = s.negotiation;
+  if (!n || n.agreedPrice !== null || n.closed) return 'No open negotiation.';
+  if (n.levers?.includes(lever)) return 'You already offered that.';
+  if (lever === 'upfront' && !hasPaymentTerms(s, n.supplierId)) return 'You pay in full up front already.';
+  (n.levers ??= []).push(lever);
+  const sup = SUPPLIERS[n.supplierId];
+  const floor = supplierFloor(s, n.productId, n.supplierId, n.qty);
+  if (n.counter !== null) n.counter = round2(Math.max(floor, n.counter * LEVERS[lever].mult));
+  n.lastMessage =
+    lever === 'flexible'
+      ? sup.style === 'firm' ? 'A little more time does help our schedule.' : 'Oh, flexible! That helps a lot, my friend.'
+      : lever === 'repeat'
+        ? 'A repeat order in two months? Now we’re talking.'
+        : 'Cash up front? That changes things.';
+  if (n.counter !== null) n.lastMessage += ` I can do $${n.counter.toFixed(2)}.`;
+  return null;
 }
 
 export function proposePrice(s: GameState, price: number): ActionResult {
   const n = s.negotiation;
   if (!n || n.agreedPrice !== null) return 'No open negotiation.';
+  if (n.closed) return 'They’ve ended the call for today.';
   const sup = SUPPLIERS[n.supplierId];
   const list = listPrice(s, n.productId, n.supplierId, n.qty);
   const floor = supplierFloor(s, n.productId, n.supplierId, n.qty);
@@ -240,6 +276,20 @@ export function proposePrice(s: GameState, price: number): ActionResult {
   const gap = (floor - price) / list;
   s.relationship[n.supplierId] = Math.max(0, s.relationship[n.supplierId] - (Math.round(gap * 40) + 1));
   n.round++;
+  // Tells: how they react says how far off you are.
+  if (gap <= 0.025) {
+    n.counter = floor;
+    n.lastMessage = sup.style === 'firm' ? `Close. $${floor.toFixed(2)} and we have a deal.` : `Ooh, so close! Meet me at $${floor.toFixed(2)}?`;
+    return null;
+  }
+  n.patience = (n.patience ?? 3) - (gap > 0.12 ? 2 : 1);
+  if (n.patience <= 0) {
+    n.closed = true;
+    n.counter = list;
+    s.relationship[n.supplierId] = Math.max(0, s.relationship[n.supplierId] - 5);
+    n.lastMessage = gap > 0.12 ? 'That’s insulting. Full price, or we’re done for today.' : 'I think we’re done for today. Full price if you still want it.';
+    return null;
+  }
   n.final = n.round >= 3;
   const counter = n.final ? floor : round2(floor + (list - floor) * (0.5 / n.round));
   n.counter = counter;
@@ -248,7 +298,16 @@ export function proposePrice(s: GameState, price: number): ActionResult {
     fair: [`That’s below our cost. I could do $${counter.toFixed(2)}.`, `I want to help, but $${counter.toFixed(2)} is my best.`],
     firm: [`We can’t go that low. $${counter.toFixed(2)}.`, `Quality has a price. $${counter.toFixed(2)}.`],
   };
-  n.lastMessage = n.final ? `Final offer: $${counter.toFixed(2)}.` : pick(s, msgs[sup.style]);
+  n.lastMessage = gap > 0.12 ? `${sup.style === 'folds' ? 'Haha, no no no.' : 'That’s not a serious offer.'} $${counter.toFixed(2)}.` : n.final ? `Final offer: $${counter.toFixed(2)}.` : pick(s, msgs[sup.style]);
+  return null;
+}
+
+/** Walk away mid-negotiation. Suppliers who like you may come back with a better offer. */
+export function walkAway(s: GameState): ActionResult {
+  const n = s.negotiation;
+  if (!n) return null;
+  if (n.round >= 1 && !n.closed && s.relationship[n.supplierId] >= 40 && chance(s, 0.5)) s.counters[`walked-${n.supplierId}`] = s.day;
+  s.negotiation = null;
   return null;
 }
 
@@ -298,10 +357,13 @@ export function createPO(
   freight: Freight,
   inspection: boolean,
   auto = false,
+  opts: { extraDays?: number; fullUpfront?: boolean } = {},
 ): ActionResult {
   const sup = SUPPLIERS[supplierId];
   const goods = round2(qty * (unitPrice + freightPerUnit(s, pid, freight)));
-  const terms = hasPaymentTerms(s, supplierId);
+  const terms = hasPaymentTerms(s, supplierId) && !opts.fullUpfront;
+  // Kept a reorder promise?
+  if ((s.counters[`promise-${supplierId}`] ?? 0) >= s.day) delete s.counters[`promise-${supplierId}`];
   const upfront = round2(terms ? goods * 0.3 : goods);
   const total = upfront + (inspection ? INSPECTION_COST : 0);
   if (s.cash < total) return `Not enough cash. You need $${Math.ceil(total).toLocaleString()}.`;
@@ -316,7 +378,7 @@ export function createPO(
     s.flags[`drift-${id}`] = true;
   }
   const contract = activeContract(s, supplierId);
-  const productionDoneDay = s.day + sup.productionDays - (contract ? 2 : 0);
+  const productionDoneDay = s.day + sup.productionDays - (contract ? 2 : 0) + (opts.extraDays ?? 0);
   s.pos.push({
     id,
     productId: pid,
@@ -356,8 +418,9 @@ export function createPO(
 export function placeOrder(s: GameState, freight: Freight, inspection: boolean): ActionResult {
   const n = s.negotiation;
   if (!n || n.agreedPrice === null) return 'Agree on a price first.';
-  const err = createPO(s, n.productId, n.supplierId, n.qty, n.agreedPrice, freight, inspection);
+  const err = createPO(s, n.productId, n.supplierId, n.qty, n.agreedPrice, freight, inspection, false, { extraDays: n.levers?.includes('flexible') ? 7 : 0, fullUpfront: n.levers?.includes('upfront') });
   if (err) return err;
+  if (n.levers?.includes('repeat')) s.counters[`promise-${n.supplierId}`] = s.day + 60;
   const p = s.products[n.productId];
   if (!p.reorder.supplierId) p.reorder.supplierId = n.supplierId;
   s.negotiation = null;

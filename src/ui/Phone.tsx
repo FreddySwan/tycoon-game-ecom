@@ -75,7 +75,7 @@ export function PhoneCard() {
           {unread + waiting.length > 0 ? `${unread + waiting.length} new · ` : ''}Open
         </button>
       </div>
-      <Bubble m={show} compact />
+      {(waiting.length > 0 || unread > 0) && <Bubble m={show} compact />}
     </div>
   );
 }

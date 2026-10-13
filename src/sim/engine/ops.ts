@@ -2,6 +2,7 @@ import { BATCH_UNLOCK_AFTER, FRIEND_HELP, HOURS, PACKAGING_COST, PACKER_RATE, RO
 import { brandOf, def, intlExtraCost, mod, packHours, round2, seatsUsed, stockQuality, storageCapacity, storageUsed } from '../economics';
 import type { BacklogBucket, CardChoice, CustomerCard, GameState, RoleId, TileId } from '../types';
 import { type ActionResult, book, milestone, notify, slice, spendOn, useHours } from './core';
+import { rollTrait } from './people';
 import { applyCardChoice } from './reviews';
 
 // ───────────────────────────── shipping ─────────────────────────────
@@ -87,7 +88,7 @@ export function hire(s: GameState, role: RoleId, n = 1): ActionResult {
   const t = s.team[role];
   if (t.count === 0 && !s.people.some((p) => p.role === role)) {
     const name = role === 'lead' && s.people.some((p) => p.name === 'Jordan') ? 'Priya Shah' : r.firstName;
-    s.people.push({ role, name, hiredDay: s.day, morale: 75, promoted: false });
+    s.people.push({ role, name, hiredDay: s.day, morale: 75, promoted: false, trait: rollTrait(s) });
     notify(s, 'team', `${r.emoji} ${name} joined as your first ${r.name.toLowerCase()}${name === 'Jordan' ? ', with two coffees' : ''}.`, true);
   }
   t.morale = Math.round((t.morale * t.count + 75 * n) / (t.count + n));

@@ -86,6 +86,31 @@ liquidation) before the business closes.
   start fresh, so the game pushes you to keep finding them. The Products table shows each product's drift.
 - *Pixel icons* (pixelarticons, MIT) replace emojis across the UI and the apartment's speech bubble.
 
+**Level-up pass (docs/LEVEL_UP_PLAN.md):**
+- *Saves:* IndexedDB with 3 slots, monthly backups, export/import, and a visible error if saving fails. Daily history
+  keeps 95 days of detail and rolls older days into monthly summaries, so saves stay around 1 MB.
+- *Calmer clock:* only decisions pause the game by default; deliveries, offers and news go to the feed and a
+  "Yesterday" digest. Choose what auto-pauses in the ☰ menu.
+- *Economy:* quarterly income tax from stage 2, overhead that grows with the company, marketplaces that rank sellers
+  who keep advertising (~10% of sales), a floor on stacked supplier discounts, Crafthaus as a premium niche.
+- *Rivals:* every category has named brands. Copycats clone your bestsellers, new brands enter where margins are fat,
+  rivals run sales, stock out and start ad wars, and your classmate Brett's VC-funded Kinetik blitzes your top
+  category. See them in Products › Market & rivals; buy struggling rivals from stage 4.
+- *Distress you can fight:* out of cash, you can also sell 15% to an angel, ask suppliers for 45 more days, or cut
+  office staff and pause ads, before closing.
+- *The founder's week:* pick 2–4 focus cards each week (ads, suppliers, freight, retention, packing line, coaching,
+  investor coffees, studying rivals, pitching retailers…). Each lasts 7 days.
+- *Late-game bets:* brand campaigns (podcasts, billboards, TV), venture rounds with a board that sets growth targets
+  (miss twice and you're replaced), selling the company.
+- *Negotiation:* suppliers react to how close you are, run out of patience, take non-price levers (timing, a repeat
+  order promise, cash up front) and may call back after you walk away.
+- *Mini-games* differ per playthrough and show their payoff in numbers.
+- *People:* key hires have traits that change their department's results. Sam and Maya can join the company.
+- *Endings:* Sold, Unicorn, Category King, Beloved Brand, The Price of It, A Real Company.
+- *UI:* one mission panel (chapter + next step), laptop apps grouped into Products / Sell / Run / Money, rolling cash
+  counter, keyboard shortcuts (space, 1–4, S).
+- `npm run report` plays seeded games on every difficulty and prints the plan's targets.
+
 **Admin mode (testing):** open the game with `?admin` or pick "Admin mode" in the ☰ menu. The panel offers unlimited
 cash (never below $1M; not booked to the P&L), unlimited founder hours, +1/7/30/90 day skips, reveal all products,
 jump to any stage with a bot-simulated business (`src/sim/admin.ts`), or force-unlock stages on the current save.

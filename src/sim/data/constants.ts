@@ -50,6 +50,13 @@ export const BRAND_SETUP_COST = 25000;
 export const BRAND_COLORS = ['#f0a860', '#3a7bd5', '#1f9d55', '#c2477a', '#7b5cd6', '#2b2d42'];
 export const START_MONTH = 2; // March
 export const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-export const OVERHEAD_RATE: Record<number, number> = { 1: 0, 2: 0.01, 3: 0.025, 4: 0.04, 5: 0.06 };
+/** Admin, software, insurance, accounting and legal grow with the company. */
+export const OVERHEAD_RATE: Record<number, number> = { 1: 0, 2: 0.015, 3: 0.04, 4: 0.07, 5: 0.09 };
+/** Corporate income tax on each quarter's profit, once you've incorporated (stage 2+). */
+export const INCOME_TAX = 0.21;
+/** Marketplaces rank sellers who keep advertising: sponsored spend at this share of a listing's sales keeps full visibility. */
+export const MARKETPLACE_AD_SHARE = 0.1;
+/** Stacked supplier discounts (volume, factory, contracts) can't take the unit price below this share of list. */
+export const DISCOUNT_FLOOR = 0.62;
 /** Payroll taxes and benefits on top of base wages. */
 export const BENEFITS = 1.15;

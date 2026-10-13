@@ -9,8 +9,9 @@ import { money, pct } from '../format';
 import { ProductImage, ProductShot, photosFor, photoUrl } from '../photos';
 import { ProductPicker, useProduct } from '../ProductPicker';
 import { Icon, withIcons } from '../icons';
+import { BrandCampaigns } from '../BrandCampaigns';
 
-type View = 'overview' | 'campaigns' | 'studio' | 'creators' | 'manager';
+type View = 'overview' | 'campaigns' | 'studio' | 'creators' | 'brand' | 'manager';
 const WINDOW = 5;
 const SOURCES: { id: AdSource; label: string }[] = [
   { id: 'scrollr', label: '📣 Scrollr social' },
@@ -63,6 +64,7 @@ export function Ads() {
           { id: 'campaigns', label: 'Campaigns' },
           { id: 'studio', label: 'Creative studio' },
           ...(game.stage >= 2 ? [{ id: 'creators' as View, label: 'Creators' }] : []),
+          ...(game.stage >= 3 ? [{ id: 'brand' as View, label: 'Brand campaigns' }] : []),
           { id: 'manager', label: 'Ad manager' },
         ]}
       />
@@ -87,6 +89,7 @@ export function Ads() {
         </>
       )}
       {view === 'creators' && creators()}
+      {view === 'brand' && <BrandCampaigns />}
       {view === 'manager' && manager()}
     </div>
   );
