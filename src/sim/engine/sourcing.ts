@@ -18,7 +18,7 @@ import {
 import { activeContract, audiences, def, freightPerUnit, hasSkill, incomingUnits, listPrice, liveProducts, mod, round2, steadyDailyUnits } from '../economics';
 import { chance, normal, pick } from '../rng';
 import type { Freight, GameState, NegotiationLever, ReorderRule, SupplierId } from '../types';
-import { type ActionResult, book, milestone, newProduct, nextId, notify, spendCash, spendOn, useHours } from './core';
+import { type ActionResult, book, milestone, newProduct, nextId, notify, spendCash, spendOn, useHours, workTime } from './core';
 
 // ───────────────────────────── products ─────────────────────────────
 
@@ -205,6 +205,11 @@ export function startNegotiation(s: GameState, pid: string, supplierId: Supplier
   const sup = SUPPLIERS[supplierId];
   if (sup.unlockStage > s.stage) return `${sup.company} only works with bigger businesses.`;
   if (qty < sup.moq) return 'Below minimum order quantity.';
+  // A new conversation takes time; changing the quantity mid-call doesn't.
+  if (!(s.negotiation?.productId === pid && s.negotiation.supplierId === supplierId)) {
+    const t = workTime(s, HOURS.negotiation);
+    if (t) return t;
+  }
   const list = listPrice(s, pid, supplierId, qty);
   // Walked away recently? They've had time to think.
   const reconsidered = (s.counters[`walked-${supplierId}`] ?? -99) >= s.day - 3;

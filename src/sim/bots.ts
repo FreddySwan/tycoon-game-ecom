@@ -74,6 +74,7 @@ function founder(s: GameState, storeScore = 4) {
     if (!s.skills[id] && when) E.buySkill(s, id);
     if (s.skills[id] && !hasSkill(s, id)) E.studySkill(s, id);
   };
+  if (!s.flags.adAccount && s.brands[0].store.quality != null && s.cash > 400) E.openAdAccount(s);
   learn('adsBasics', s.cash > 500);
   learn('tapeGun', s.cash > 900);
   learn('labelPrinter', s.cash > 2500 && s.shipped > 20);
@@ -402,7 +403,7 @@ export function naiveBot(seed: number, days = 60): BotResult {
   for (const m of ['hero', 'description', 'checkout'] as ModuleId[]) E.setModule(s, 1, m, 1);
   E.toggleBenefit(s, 'dogbowl', 'dishwasher');
   E.setBrandName(s, 1, 'Bowl Co');
-  E.buySkill(s, 'adsBasics');
+  E.openAdAccount(s);
   E.completeStoreBuild(s, 1, 2);
   while (s.day < days && s.status === 'playing') {
     const p = s.products.dogbowl;

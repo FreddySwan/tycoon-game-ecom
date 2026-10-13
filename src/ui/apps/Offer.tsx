@@ -1,5 +1,5 @@
 import { CUSTOMER_SHIPPING_CHARGE, DAMAGE_RATE, PACKAGING_COST, THIRD_PARTY } from '../../sim/data';
-import { brandOf, breakEvenCPA, bundlePrice, def, orderBreakdown, perception, returnRate, siteCVR } from '../../sim/economics';
+import { brandOf, breakEvenCPA, bundlePrice, def, knowsEconomics, orderBreakdown, perception, returnRate, siteCVR } from '../../sim/economics';
 import { setBrandOps, setOffer } from '../../sim/engine';
 import type { Packaging } from '../../sim/types';
 import { useGame } from '../../state/store';
@@ -28,6 +28,7 @@ export function OfferApp() {
     const per = perception(game, pid);
     const be = breakEvenCPA(game, pid);
     const cvr = siteCVR(game, pid, null);
+    const econ = knowsEconomics(game);
     const packs: Packaging[] = game.stage >= 2 ? ['basic', 'sturdy', 'branded'] : ['basic', 'sturdy'];
     return (
       <div className="builder">
@@ -99,9 +100,10 @@ export function OfferApp() {
             </div>
             <div className="line total">
               <span>You keep per order</span>
-              <span className={single.contribution > 0 ? 'good-text' : 'bad-text'}>{money(single.contribution, true)}</span>
+              {econ ? <span className={single.contribution > 0 ? 'good-text' : 'bad-text'}>{money(single.contribution, true)}</span> : <span>?</span>}
             </div>
           </div>
+          {!econ && <p className="tiny muted">You have the receipts but haven’t learned to put them together. The Unit Economics course in SkillUp shows what you really keep, your margin and your break-even ad cost.</p>}
           {game.stage >= 2 && (
             <p className="tiny muted" style={{ marginTop: 6 }}>
               {game.thirdParty
@@ -109,8 +111,8 @@ export function OfferApp() {
                 : `With a 3PL you'd keep ${money(single.contribution - THIRD_PARTY.perOrder, true)} per order (${money(THIRD_PARTY.perOrder, true)} handling fee), with no packing limits.`}
             </p>
           )}
-          <div className="callout good" style={{ marginTop: 12 }}>
-            <b>Break-even ad cost: {money(be, true)} per order</b>
+          <div className={`callout ${econ ? 'good' : ''}`} style={{ marginTop: 12 }}>
+            <b>Break-even ad cost: {econ ? `${money(be, true)} per order` : '?'}</b>
             <div className="tiny">{p.bundle ? 'Blended with bundles. ' : ''}If ads cost more than this to win one order, you lose money on it.</div>
           </div>
           <div className="callout" style={{ marginTop: 10 }}>

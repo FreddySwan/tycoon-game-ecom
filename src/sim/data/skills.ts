@@ -14,13 +14,34 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   },
   adsBasics: {
     id: 'adsBasics',
-    name: 'Ads Launchpad',
+    name: 'Ad Metrics 101',
     kind: 'course',
     icon: '📣',
     cost: 149,
     hours: 4,
-    desc: 'Set up a Scrollr ad account, pixels, audiences and your first test campaign.',
-    effect: 'Unlocks Scrollr ads.',
+    desc: 'CTR, CPC, CPA, ROAS and break-even. Without it you see what you spend, not which ads make money.',
+    effect: 'Unlocks daily ad performance reviews.',
+  },
+  economics: {
+    id: 'economics',
+    name: 'Unit Economics for E-commerce',
+    kind: 'course',
+    icon: '🧾',
+    cost: 149,
+    hours: 3,
+    desc: 'Landed cost, contribution, margins and the most important number: your break-even ad cost.',
+    effect: 'Shows what you really keep per order, your margins and break-even.',
+  },
+  analytics: {
+    id: 'analytics',
+    name: 'Lens Analytics',
+    kind: 'software',
+    icon: '📊',
+    cost: 49,
+    monthly: 49,
+    requires: ['adsBasics'],
+    desc: 'Your ad report builds itself every morning.',
+    effect: 'Daily ad reviews take no founder time.',
   },
   adSpy: {
     id: 'adSpy',
@@ -123,7 +144,7 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   },
 };
 
-export const SKILL_ORDER: SkillId[] = ['researchTool', 'adsBasics', 'adSpy', 'tapeGun', 'scale', 'labelPrinter', 'packBench', 'photography', 'storeCourse', 'copywriting', 'searchAds', 'adsAdvanced'];
+export const SKILL_ORDER: SkillId[] = ['researchTool', 'adSpy', 'analytics', 'economics', 'adsBasics', 'tapeGun', 'scale', 'labelPrinter', 'packBench', 'photography', 'storeCourse', 'copywriting', 'searchAds', 'adsAdvanced'];
 
 /** Each piece of gear multiplies the time it takes to pack one order. */
 export const PACK_SPEED: Partial<Record<SkillId, number>> = { tapeGun: 0.8, scale: 0.9, labelPrinter: 0.7, packBench: 0.85 };

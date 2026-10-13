@@ -21,6 +21,20 @@ export const HOURS = {
   research: 3,
   storeBuild: 4,
   creativeResearch: 2,
+  /** Pulling ad numbers together and working out what's winning. */
+  adReview: 1,
+  adAccount: 1,
+  /** Each change to an ad, a budget or a sponsored listing. */
+  adTweak: 0.1,
+  creativeEdit: 0.25,
+  storeEdit: 0.25,
+  listingSetup: 0.5,
+  negotiation: 0.5,
+  emailCampaign: 1,
+  /** Every day: inbox, bank, order admin. */
+  dailyAdmin: 0.5,
+  /** Every day, per product with ads running and no marketer: checking spend and pausing what's broken. */
+  adUpkeep: 0.3,
   /** Digging for your very first product is quicker: you have nothing else to do. */
   dig: 1,
   investigate: 1,

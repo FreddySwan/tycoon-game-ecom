@@ -519,6 +519,21 @@ export function hoursLeft(s: GameState): number {
   return Math.max(0, founderMaxHours(s) + s.extraHours - s.hoursUsed);
 }
 
+/** Can you read ad metrics at all? (Course, or a marketer who reads them for you.) */
+export function knowsAdMetrics(s: GameState): boolean {
+  return hasSkill(s, 'adsBasics') || s.team.marketer.count > 0;
+}
+
+/** Are today's ad numbers worked out? Someone has to do it: you (1h), software, or a marketer. */
+export function adsReviewed(s: GameState): boolean {
+  return knowsAdMetrics(s) && (s.counters.adReviewDay === s.day || hasSkill(s, 'analytics') || s.team.marketer.count > 0 || s.stage >= 3);
+}
+
+/** Do you understand your unit economics? (Course, or a team that does from stage 3.) */
+export function knowsEconomics(s: GameState): boolean {
+  return hasSkill(s, 'economics') || s.stage >= 3;
+}
+
 /** Founder hours to pack one order: packing gear speeds it up. */
 export function packHours(s: GameState): number {
   let h = HOURS.handPack / mod(s, 'packRate');

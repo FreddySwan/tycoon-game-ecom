@@ -39,6 +39,7 @@ export function ShopBloc() {
           <p className="tiny muted">Brand name</p>
           <input type="text" value={brand.name} placeholder="e.g. Pawsitive Pace" onChange={(e) => act(setBrandName, brand.id, e.target.value)} />
           <h3>Store modules</h3>
+          {game.stage <= 2 && <p className="tiny muted" style={{ marginTop: -4 }}>Each change takes about 15 minutes of your day.</p>}
           {MODULES.map((m) => {
             const tier = brand.store.modules[m.id];
             return (

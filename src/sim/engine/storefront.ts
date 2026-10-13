@@ -2,7 +2,7 @@ import { MODULES, packScore, STORE_SUBSCRIPTION } from '../data';
 import { def, hasSkill, round2 } from '../economics';
 import type { Brand, GameState, ModuleId, PackDesign, Packaging, PhotoChoice, Vibe } from '../types';
 import { HOURS } from '../data';
-import { type ActionResult, milestone, nextId, notify, spendOn, useHours } from './core';
+import { type ActionResult, milestone, nextId, notify, spendOn, useHours, workTime } from './core';
 
 function brand(s: GameState, brandId: number): Brand {
   return s.brands.find((b) => b.id === brandId) ?? s.brands[0];
@@ -14,6 +14,8 @@ export function setModule(s: GameState, brandId: number, id: ModuleId, tier: num
   if (tier < 0 || tier > d.tiers.length) return 'Invalid tier.';
   const current = b.store.modules[id];
   if (tier === 0 && d.required && b.store.launched) return `Your live store needs a ${d.name}.`;
+  const t = workTime(s, HOURS.storeEdit);
+  if (t) return t;
   if (tier > current) {
     let cost = 0;
     for (let t = current + 1; t <= tier; t++) if (!s.flags[`bought-${b.id}-${id}-${t}`]) cost += d.tiers[t - 1].cost;

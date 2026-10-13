@@ -111,6 +111,17 @@ liquidation) before the business closes.
   counter, keyboard shortcuts (space, 1–4, S).
 - `npm run report` plays seeded games on every difficulty and prints the plan's targets.
 
+**Founder time & knowledge:**
+- The laptop is a browser: every app is a tab (Trends, Skills, Suppliers, Store, Pricing, Ads, Orders, Inbox, CRM,
+  Bank, Company, Wall) with an address bar.
+- In the apartment and garage the founder's day fills up: 30 min of daily admin plus ~20 min per product with ads
+  running (until a marketer takes over), and hands-on work costs time: each ad or budget change ~6 min, creative
+  edits and store edits 15 min, a supplier negotiation 30 min, a marketplace listing 30 min, an email campaign 1h,
+  reviewing ad performance 1h, packing 15 min an order before gear.
+- Running ads needs an ad account ($100, 1h). Reading them needs knowledge: without Ad Metrics 101 you only see spend
+  and orders; with it you still spend an hour a day working out the numbers, unless Lens Analytics ($49/month) or a
+  marketer does it. What you keep per order and your break-even ad cost stay hidden until the Unit Economics course.
+
 **Admin mode (testing):** open the game with `?admin` or pick "Admin mode" in the ☰ menu. The panel offers unlimited
 cash (never below $1M; not booked to the P&L), unlimited founder hours, +1/7/30/90 day skips, reveal all products,
 jump to any stage with a bot-simulated business (`src/sim/admin.ts`), or force-unlock stages on the current save.

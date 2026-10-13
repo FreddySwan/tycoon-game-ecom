@@ -1,5 +1,5 @@
 import { BATCH_UNLOCK_AFTER, STAGES, STARTING_CASH, WIN_REORDER_QTY } from '../sim/data';
-import { breakEvenCPA, fulfillmentCapacity, hasSkill, liveProducts, stockDays } from '../sim/economics';
+import { breakEvenCPA, fulfillmentCapacity, hasSkill, knowsAdMetrics, knowsEconomics, liveProducts, stockDays } from '../sim/economics';
 import { launchProblems, onStore } from '../sim/engine';
 import { stageChecks } from '../sim/progress';
 import type { GameState, StageId } from '../sim/types';
@@ -35,10 +35,12 @@ export function currentGoal(s: GameState): Goal {
   }
   if (!s.shipped && !s.products[pid].inventory.onHand) return { title: 'Waiting for stock', hint: 'Set your price in Offer and plan ads while the boxes ship.', tab: 'offer' };
   if (s.backlog.length && !s.batchPacking && s.stage === 1) return { title: 'Pack your orders', hint: `Pack the first orders by hand (${s.handPacked}/${BATCH_UNLOCK_AFTER}) to unlock batch packing.`, tab: 'ops' };
-  if (s.stage === 1 && !hasSkill(s, 'adsBasics') && !ids.some((id) => Object.values(s.products[id].ads).some((c) => c.totals.spend > 0)))
-    return { title: 'Learn to run ads', hint: s.skills.adsBasics ? 'Keep studying the Ads Launchpad course in SkillUp. Then you can open your Scrollr ad account.' : 'Enroll in the Ads Launchpad course in SkillUp ($149, 4h of study) to open a Scrollr ad account.', tab: 'skills' };
+  if (s.stage === 1 && !s.flags.adAccount) return { title: 'Open your ad account', hint: 'In the Ads app: $100 setup and an hour of verification. Then you can test your first ads.', tab: 'ads' };
   if (s.stage === 1 && !ids.some((id) => Object.values(s.products[id].ads).some((c) => c.totals.spend > 0))) return { title: 'Launch a test campaign', hint: 'In the Ads app, switch on a few audience × creative cells at $10/day.', tab: 'ads' };
-  if (s.stage === 1 && !s.milestones.first_profitable_campaign) return { title: 'Find a winning ad', hint: `Keep ads whose cost per order is under ${money(breakEvenCPA(s, pid), true)}. Pause the rest.`, tab: 'ads' };
+  if (s.stage === 1 && !s.milestones.first_profitable_campaign) {
+    if (!knowsAdMetrics(s)) return { title: 'Learn to read your ads', hint: 'You can see what you spend, but not which ads make money. Take Ad Metrics 101 in SkillUp (4h of study).', tab: 'skills' };
+    return { title: 'Find a winning ad', hint: knowsEconomics(s) ? `Review your ads daily (1h). Keep ads whose cost per order is under ${money(breakEvenCPA(s, pid), true)}; pause the rest.` : 'Review your ads daily (1h). To know which cost per order is too high, take Unit Economics in SkillUp.', tab: 'ads' };
+  }
   if (s.stage === 1 && !s.milestones.first_profitable_reorder) {
     const sd = stockDays(s, pid);
     return {

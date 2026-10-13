@@ -98,7 +98,7 @@ export function Customers() {
             {segment === 'all' && type !== 'story' && <span className="tiny muted"> · broad sends tire your list 50% faster</span>}
           </p>
           <button className="primary" disabled={!ready} onClick={() => act(sendCampaign, b.id, plan)}>
-            {ready ? 'Send campaign' : `Next send on day ${b.email.lastCampaign + 7}`}
+            {ready ? `Send campaign${game.stage <= 2 ? ' (1h to write)' : ''}` : `Next send on day ${b.email.lastCampaign + 7}`}
           </button>
         </div>
 

@@ -1,9 +1,9 @@
 import { CHANNELS, CREATORS, HOURS, MARKETPLACE_AD_SHARE, MARKETPLACES } from '../data';
-import { breakEvenCPA, creativeUnlocked, def, hasSkill, listingVisibility, liveProducts, orderBreakdown, recentCPA, round2, stockQuality } from '../economics';
+import { adsReviewed, breakEvenCPA, creativeUnlocked, def, hasSkill, knowsAdMetrics, listingVisibility, liveProducts, orderBreakdown, recentCPA, round2, stockQuality } from '../economics';
 import { chance, pick } from '../rng';
 import type { CampaignType, CategoryId, ChannelId, Creative, CreativeType, EmailCampaign, GameState, Listing, Segment } from '../types';
 import { addReviews } from './reviews';
-import { type ActionResult, adStat, book, milestone, nextId, notify, spendOn, useHours } from './core';
+import { type ActionResult, adStat, book, milestone, nextId, notify, spendOn, useHours, workTime } from './core';
 import { onStore } from './storefront';
 
 // ───────────────────────────── Scrollr ─────────────────────────────
@@ -12,7 +12,9 @@ export function setAdCell(s: GameState, pid: string, key: string, patch: { activ
   const p = s.products[pid];
   const cell = p?.ads[key];
   if (!cell) return 'Unknown ad.';
-  if (patch.active && !hasSkill(s, 'adsBasics')) return 'Take the Ads Launchpad course in SkillUp first: you don’t have an ad account yet.';
+  if (patch.active && !s.flags.adAccount) return 'Open your Scrollr ad account first (Ads app).';
+  const tweak = workTime(s, HOURS.adTweak);
+  if (tweak) return tweak;
   if (patch.active && !creativeUnlocked(s, pid, cell.creative)) return cell.creative === 'ugc' ? 'Hire a creator for this product first.' : 'This creative needs 3+ reviews first.';
   if (patch.active && !onStore(s, pid)) return 'This product isn’t live in your store yet (store launched, photo and description).';
   if (patch.active && !p.inventory.onHand && !p.sold) return 'Wait until stock arrives. Ads to an empty store waste money.';
@@ -31,6 +33,8 @@ export function setSearch(s: GameState, pid: string, patch: { active?: boolean; 
   if (!searchUnlocked(s)) return 'Finish the Search Ads Bootcamp in SkillUp to run Seekly ads.';
   const p = s.products[pid];
   if (patch.active && !onStore(s, pid)) return 'This product isn’t live in your store yet.';
+  const t = workTime(s, HOURS.adTweak);
+  if (t) return t;
   if (patch.budget !== undefined) p.search.budget = Math.max(5, Math.min(5000, Math.round(patch.budget)));
   if (patch.active !== undefined) p.search.active = patch.active;
   return null;
@@ -109,6 +113,8 @@ export function setListing(s: GameState, pid: string, ch: ChannelId, patch: Part
   }
   if (patch.program && !CHANNELS[ch].program) return 'No fulfillment program on this channel.';
   if (next.sponsored) next.sponsored = Math.max(0, Math.min(3000, Math.round(next.sponsored)));
+  const t = workTime(s, patch.active && !l.active ? HOURS.listingSetup : HOURS.adTweak);
+  if (t) return t;
   p.listings[ch] = next;
   return null;
 }
@@ -194,6 +200,8 @@ export function sendCampaign(s: GameState, brandId: number, plan: CampaignPlan):
   if (b.email.list < 100) return 'Build your list to 100+ subscribers first.';
   if (s.day - b.email.lastCampaign < 7) return 'One campaign a week, or people unsubscribe.';
   if (plan.type === 'launch' && (!plan.productId || !s.products[plan.productId])) return 'Pick the product to launch.';
+  const t = workTime(s, HOURS.emailCampaign);
+  if (t) return t;
   const meta = CAMPAIGNS[plan.type];
   const f = forecastCampaign(s, brandId, plan);
   if (f.sent < 20) return 'That segment is too small to email yet.';
@@ -237,6 +245,8 @@ export function sendCampaign(s: GameState, brandId: number, plan: CampaignPlan):
 export function setCreative(s: GameState, pid: string, type: CreativeType, patch: Partial<Creative>): ActionResult {
   const p = s.products[pid];
   if (!p) return 'Unknown product.';
+  const t = workTime(s, HOURS.creativeEdit);
+  if (t) return t;
   Object.assign(p.creatives[type], patch);
   // A new creative restarts learning: fatigue resets.
   for (const c of Object.values(p.ads)) if (c.creative === type) c.daysActive = 0;
@@ -268,6 +278,28 @@ export function completeCreativeResearch(s: GameState, pid: string, score: numbe
   if (err) return err;
   p.creativeQuality = Math.max(p.creativeQuality ?? 0, creativeQualityFrom(s, score));
   if (hook) for (const c of Object.values(p.creatives)) c.hook = hook;
+  return null;
+}
+
+/** Open the Scrollr ad account: verification, payment method, tracking pixel. */
+export function openAdAccount(s: GameState): ActionResult {
+  if (s.flags.adAccount) return null;
+  if (s.cash < 100) return 'You need $100 for the account setup and first verification charge.';
+  const t = useHours(s, HOURS.adAccount);
+  if (t) return t;
+  book(s, 'ads', 100, { sub: 'Ad account setup' });
+  s.flags.adAccount = true;
+  notify(s, 'info', 'Your Scrollr ad account is verified and the tracking pixel is live.');
+  return null;
+}
+
+/** Work out today's ad numbers: which ads win, which lose. Needs the course; takes an hour unless automated. */
+export function reviewAds(s: GameState): ActionResult {
+  if (!knowsAdMetrics(s)) return 'You don’t know how to read these numbers yet. Take Ad Metrics 101 in SkillUp.';
+  if (adsReviewed(s)) return null;
+  const t = useHours(s, HOURS.adReview);
+  if (t) return t;
+  s.counters.adReviewDay = s.day;
   return null;
 }
 

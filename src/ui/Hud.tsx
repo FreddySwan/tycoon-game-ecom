@@ -33,6 +33,7 @@ export function Hud() {
   const [menu, setMenu] = useState(false);
   const hours = hoursLeft(game);
   const maxHours = founderMaxHours(game) + game.extraHours;
+  const routine = E.routineHours(game);
   const rating = averageRating(game);
   const blocked = isBlocked(game);
   const stock = Object.values(game.products).reduce((a, p) => a + p.inventory.onHand, 0);
@@ -60,7 +61,7 @@ export function Hud() {
         {game.credit.balance > 0 && <span className="value small">credit −{money(game.credit.balance)}</span>}
       </div>
       {game.stage <= 2 && (
-        <div className="stat hours" title="Founder hours left today. Packing, support and photo shoots use them.">
+        <div className="stat hours" title={`Founder hours left today. Your routine takes ${routine.total.toFixed(1)}h a day (admin ${routine.admin}h${routine.ads ? `, keeping ads running ${routine.ads.toFixed(1)}h` : ""}); packing, reviews, ad changes, research and support use the rest.`}>
           <span className="label">Founder hours</span>
           <span className="bar">
             <span style={{ width: `${(hours / maxHours) * 100}%` }} />

@@ -70,7 +70,7 @@ export function SourceMart() {
                   {sample?.inspected && <p className="tiny"><Icon name="note" /> Your notes: {sampleNote(game, pid, id)}</p>}
                   {(!neg || neg.supplierId !== id || neg.productId !== pid) && (
                     <button className={sample?.inspected ? 'primary' : ''} onClick={() => act(startNegotiation, pid, id, quantityOptions(id)[0])}>
-                      Negotiate an order
+                      Negotiate an order{game.stage <= 2 ? ' (30 min)' : ''}
                     </button>
                   )}
                 </div>

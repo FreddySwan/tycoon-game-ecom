@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { CREATIVES, CREATIVE_ORDER, CREATORS, CTA_FIT, HOOK_FIT, hooksFor } from '../../sim/data';
-import { adTrailing, hasSkill, audiences, breakEvenCPA, creativeMult, creativeUnlocked, dailyAdBudget, def, liveProducts, recentCPA, searchForecast, trailing } from '../../sim/economics';
-import { adCap, completeAngleTest, hireCreator, onStore, searchUnlocked, setAdCell, setAdPolicy, setCreative, setSearch } from '../../sim/engine';
+import { adsReviewed, adTrailing, audiences, breakEvenCPA, creativeMult, creativeUnlocked, dailyAdBudget, def, hasSkill, knowsAdMetrics, knowsEconomics, liveProducts, recentCPA, searchForecast, trailing } from '../../sim/economics';
+import { adCap, completeAngleTest, hireCreator, onStore, openAdAccount, reviewAds, searchUnlocked, setAdCell, setAdPolicy, setCreative, setSearch } from '../../sim/engine';
 import type { AdCell, AdDay, AdSource, CreativeType, Cta, GameState } from '../../sim/types';
 import { useGame } from '../../state/store';
 import { AppTitle, NumberInput, Options, SubTabs } from '../bits';
@@ -39,6 +39,11 @@ export function Ads() {
   const [days, setDays] = useState(7);
   const pid = useProduct();
   const marketer = game.people.find((p) => p.role === 'marketer');
+  /** Today's numbers worked out (course + 1h review, software, or a marketer). */
+  const read = adsReviewed(game);
+  const knows = knowsAdMetrics(game);
+  const econ = knowsEconomics(game);
+  const q = (v: string) => (read ? v : '?');
   const oos = liveProducts(game).filter((id) => {
     const p = game.products[id];
     return p.inventory.onHand <= 0 && (p.search.active || Object.values(p.ads).some((c) => c.active));
@@ -75,6 +80,21 @@ export function Ads() {
         </span>
         {oos.length > 0 && <span className={`pill ${game.adPolicy.pauseOOS ? 'good' : 'bad'}`}>{game.adPolicy.pauseOOS ? `${oos.length} paused now` : `${oos.length} out of stock, still spending`}</span>}
       </label>
+      {!game.flags.adAccount ? (
+        <div className="callout warn">
+          <b>
+            <Icon name="lock" /> No ad account yet.
+          </b>{' '}
+          Scrollr needs a verified business account, a payment method and a tracking pixel before you can run a single ad.
+          <div style={{ marginTop: 6 }}>
+            <button className="primary small" onClick={() => act(openAdAccount)}>
+              Open your ad account ($100, 1h)
+            </button>
+          </div>
+        </div>
+      ) : (
+        reviewBanner()
+      )}
       {view === 'overview' && overview()}
       {view === 'campaigns' && (
         <>
@@ -94,6 +114,26 @@ export function Ads() {
     </div>
   );
 
+  function reviewBanner() {
+    if (read) return game.counters.adReviewDay === game.day ? <p className="tiny good-text"><Icon name="check" /> You reviewed today’s ad numbers.</p> : null;
+    if (!knows)
+      return (
+        <p className="callout">
+          <Icon name="neutral" /> You can see what you spend and how many orders came in. Clicks, click-through, cost per order and return on ad spend? You don’t know how to work those out yet. <b>Ad Metrics 101</b> in SkillUp teaches you.
+        </p>
+      );
+    return (
+      <div className="callout">
+        <Icon name="chartBar" /> Today’s ad numbers aren’t worked out yet. Pulling the reports and doing the math takes an hour (Lens Analytics or a marketer can do it for you).
+        <div style={{ marginTop: 6 }}>
+          <button className="primary small" onClick={() => act(reviewAds)}>
+            Review today’s ad performance (1h)
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ───────────────────────────── overview ─────────────────────────────
 
   function overview() {
@@ -109,9 +149,9 @@ export function Ads() {
         </div>
         <div className="kpis" style={{ marginTop: 10 }}>
           <Kpi k="Ad spend" v={money(sum.spend)} s={`${pct(ratio(sum.spend, revenue))} of all revenue`} />
-          <Kpi k="Ad orders" v={sum.orders.toLocaleString()} s={`${sum.clicks.toLocaleString()} clicks`} />
-          <Kpi k="Cost per order" v={sum.orders ? money(sum.spend / sum.orders, true) : '—'} s="all sources" />
-          <Kpi k="Ad revenue" v={money(sum.revenue)} s={`ROAS ${ratio(sum.revenue, sum.spend).toFixed(2)}×`} />
+          <Kpi k="Ad orders" v={sum.orders.toLocaleString()} s={`${q(sum.clicks.toLocaleString())} clicks`} />
+          <Kpi k="Cost per order" v={q(sum.orders ? money(sum.spend / sum.orders, true) : '—')} s="all sources" />
+          <Kpi k="Ad revenue" v={q(money(sum.revenue))} s={`ROAS ${q(ratio(sum.revenue, sum.spend).toFixed(2) + '×')}`} />
         </div>
         <h3>By source</h3>
         <table className="data">
@@ -171,7 +211,7 @@ export function Ads() {
                           {x && x.spend ? (
                             <>
                               {money(x.spend)}
-                              <div className={`tiny ${x.orders && x.spend / x.orders < be ? 'good-text' : 'bad-text'}`}>{x.orders ? money(x.spend / x.orders, true) : 'no orders'}</div>
+                              <div className={`tiny ${read && econ ? (x.orders && x.spend / x.orders < be ? 'good-text' : 'bad-text') : 'muted'}`}>{q(x.orders ? money(x.spend / x.orders, true) : 'no orders')}</div>
                             </>
                           ) : (
                             <span className="muted">—</span>
@@ -181,10 +221,10 @@ export function Ads() {
                     })}
                     <td className="num">{money(t.spend)}</td>
                     <td className="num">{t.orders}</td>
-                    <td className={`num ${cpa !== null && cpa < be ? 'good-text' : cpa !== null ? 'bad-text' : ''}`}>
-                      {cpa !== null ? money(cpa, true) : '—'} <span className="tiny muted">/ {money(be, true)}</span>
+                    <td className={`num ${read && econ ? (cpa !== null && cpa < be ? 'good-text' : cpa !== null ? 'bad-text' : '') : ''}`}>
+                      {q(cpa !== null ? money(cpa, true) : '—')} <span className="tiny muted">/ {econ ? money(be, true) : '?'}</span>
                     </td>
-                    <td className="num">{ratio(t.revenue, t.spend).toFixed(2)}×</td>
+                    <td className="num">{q(`${ratio(t.revenue, t.spend).toFixed(2)}×`)}</td>
                   </tr>
                 );
               })}
@@ -200,13 +240,13 @@ export function Ads() {
       <tr key={label} style={bold ? { fontWeight: 800 } : undefined}>
         <td>{withIcons(label)}</td>
         <td className="num">{money(x.spend)}</td>
-        <td className="num">{Math.round(x.impressions).toLocaleString()}</td>
-        <td className="num">{Math.round(x.clicks).toLocaleString()}</td>
-        <td className="num">{pct(ratio(x.clicks, x.impressions))}</td>
+        <td className="num">{q(Math.round(x.impressions).toLocaleString())}</td>
+        <td className="num">{q(Math.round(x.clicks).toLocaleString())}</td>
+        <td className="num">{q(pct(ratio(x.clicks, x.impressions)))}</td>
         <td className="num">{x.orders.toLocaleString()}</td>
-        <td className="num">{x.orders ? money(x.spend / x.orders, true) : '—'}</td>
-        <td className="num">{money(x.revenue)}</td>
-        <td className="num">{ratio(x.revenue, x.spend).toFixed(2)}×</td>
+        <td className="num">{q(x.orders ? money(x.spend / x.orders, true) : '—')}</td>
+        <td className="num">{q(money(x.revenue))}</td>
+        <td className="num">{q(`${ratio(x.revenue, x.spend).toFixed(2)}×`)}</td>
       </tr>
     );
   }
@@ -219,10 +259,15 @@ export function Ads() {
     const auds = audiences(game, pid);
     return (
       <>
-        <p className="callout good">
-          Break-even for {def(game, pid).name}: <b>{money(be, true)}</b> per order. Keep ads that win orders for less. Edit the creatives in the Creative studio tab.
-        </p>
+        {econ ? (
+          <p className="callout good">
+            Break-even for {def(game, pid).name}: <b>{money(be, true)}</b> per order. Keep ads that win orders for less. Edit the creatives in the Creative studio tab.
+          </p>
+        ) : (
+          <p className="callout">How much can you pay for an order before you lose money? You don’t know your break-even yet: the Unit Economics course in SkillUp shows it.</p>
+        )}
         {!onStore(game, pid) && <p className="callout warn">This product isn’t live in your store yet. You can plan budgets now.</p>}
+        {game.stage <= 2 && !marketer && <p className="tiny muted">Every switch or budget change takes ~6 minutes, and each product with ads running costs you ~20 minutes a day to keep an eye on. A growth marketer takes this off your plate.</p>}
         <h3><Icon name="radioSignal" /> Scrollr social ads</h3>
         <div className="adgrid" style={{ gridTemplateColumns: `110px repeat(${CREATIVE_ORDER.length}, 1fr)` }}>
           <div />
@@ -261,7 +306,7 @@ export function Ads() {
     const r = recentCPA(cell, WINDOW);
     const ran = cell.totals.spend > 0;
     return (
-      <div key={cell.key} className={`adcell ${locked ? 'locked' : ran ? v.cls : ''}`}>
+      <div key={cell.key} className={`adcell ${locked ? 'locked' : ran && read && econ ? v.cls : ''}`}>
         {locked ? (
           <span className="tiny"><Icon name="lock" /> {cell.creative === 'ugc' ? 'Needs a creator collab' : 'Needs 3 reviews'}</span>
         ) : (
@@ -278,10 +323,14 @@ export function Ads() {
                 <div className="tiny">
                   {WINDOW}d: {money(r.spend)} → {r.orders} orders
                 </div>
-                <div className="row between">
-                  <b className={r.cpa !== null && r.cpa < be ? 'good-text' : 'bad-text'}>{r.cpa !== null ? `${money(r.cpa, true)}/order` : 'no orders'}</b>
-                  <span className="tiny">{v.label}</span>
-                </div>
+                {read ? (
+                  <div className="row between">
+                    <b className={econ ? (r.cpa !== null && r.cpa < be ? 'good-text' : 'bad-text') : ''}>{r.cpa !== null ? `${money(r.cpa, true)}/order` : 'no orders'}</b>
+                    <span className="tiny">{econ ? v.label : 'vs break-even: ?'}</span>
+                  </div>
+                ) : (
+                  <span className="tiny muted">Cost per order: ?</span>
+                )}
               </>
             ) : (
               <span className="tiny muted">Not tested yet</span>
@@ -313,9 +362,9 @@ export function Ads() {
         {p.search.history.length > 0 && (
           <div className="row between">
             <span className="tiny">
-              7d: {money(r.spend)} · {clicks} clicks → {r.orders} orders
+              7d: {money(r.spend)} · {q(String(clicks))} clicks → {r.orders} orders
             </span>
-            <b className={r.cpa !== null && r.cpa < be ? 'good-text' : 'bad-text'}>{r.cpa !== null ? `${money(r.cpa, true)}/order` : 'no orders'}</b>
+            <b className={read && econ ? (r.cpa !== null && r.cpa < be ? 'good-text' : 'bad-text') : ''}>{q(r.cpa !== null ? `${money(r.cpa, true)}/order` : 'no orders')}</b>
           </div>
         )}
       </div>

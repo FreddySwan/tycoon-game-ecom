@@ -1,5 +1,5 @@
 import { cpmSeason, isBigBazaarlyDays } from '../calendar';
-import { CHANNELS, INCOME_TAX, MARKETPLACES, OVERHEAD_RATE, PAYROLL_EVERY, ROLE_TEAM, SUPPLIERS, THIRD_PARTY } from '../data';
+import { CHANNELS, HOURS, INCOME_TAX, MARKETPLACES, OVERHEAD_RATE, PAYROLL_EVERY, ROLE_TEAM, SUPPLIERS, THIRD_PARTY } from '../data';
 import { averageRating, avgDailyOrders, brandOf, bundlePrice, bundleShare, cellForecast, channelFee, channelPrice, copycatMult, creativeUnlocked, def, effectivePrice, fulfillmentCapacity, intlFactor, intlShare, liveProducts, listingVisibility, rivalAdMult, marketOf, mod, packHours, payrollByRole, payrollMonthly, priceFactor, profitOf, reviewFactor, round2, searchForecast, siteCVR, stockQuality, storageCapacity, storageUsed, supportCapacity, taxEstimate, trailing, trendMult } from '../economics';
 import { binomial, chance, poisson, rand } from '../rng';
 import type { BacklogBucket, ChannelId, DailyRecord, GameState, OrderSource, RoleId } from '../types';
@@ -171,6 +171,21 @@ function arrivals(s: GameState): void {
   }
   // Keep the PO list manageable.
   if (s.pos.length > 60) s.pos = s.pos.filter((p, i) => p.status !== 'arrived' || i >= s.pos.length - 40);
+}
+
+// ───────────────────────────── founder's day ─────────────────────────────
+
+/** The founder's fixed daily work while they still run everything: admin, and keeping ads alive. */
+export function routineHours(s: GameState): { admin: number; ads: number; total: number } {
+  if (s.stage >= 3) return { admin: 0, ads: 0, total: 0 };
+  const withAds = s.team.marketer.count ? 0 : liveProducts(s).filter((id) => Object.values(s.products[id].ads).some((c) => c.active) || s.products[id].search.active).length;
+  const admin = s.productOrder.length ? HOURS.dailyAdmin : 0;
+  const ads = withAds * HOURS.adUpkeep;
+  return { admin, ads, total: admin + ads };
+}
+
+function foundersRoutine(s: GameState): void {
+  s.hoursUsed += routineHours(s).total;
 }
 
 // ───────────────────────────── money in & out ─────────────────────────────
@@ -589,6 +604,7 @@ export function advanceDay(s: GameState): void {
 
   s.day++;
   const rec = today(s);
+  foundersRoutine(s);
 
   revealDue(s);
   arrivals(s);

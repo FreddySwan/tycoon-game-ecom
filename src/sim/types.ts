@@ -734,6 +734,8 @@ export interface GameState {
 
 export type SkillId =
   | 'adsBasics'
+  | 'economics'
+  | 'analytics'
   | 'adsAdvanced'
   | 'searchAds'
   | 'copywriting'

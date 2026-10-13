@@ -210,7 +210,7 @@ export function createGame(seed = Date.now(), difficulty: Difficulty = 'normal')
     ambitionsDone: [],
     stageOffer: null,
     discountFatigue: 0,
-    flags: {},
+    flags: { timeCosts: true },
     counters: { revenueLifetime: 0, runSeed: (seed >>> 0) % 1_000_000 },
     seq: 100,
     lastDayOrders: 0,
@@ -235,6 +235,12 @@ export function milestone(s: GameState, id: MilestoneId, label?: string): void {
   if (s.milestones[id]) return;
   s.milestones[id] = s.day;
   notify(s, 'milestone', label ?? MILESTONE_LABELS[id], true);
+}
+
+/** Hands-on work: costs founder hours while the founder still does everything (stages 1–2); free after that. */
+export function workTime(s: GameState, hours: number): ActionResult {
+  if (s.stage >= 3) return null;
+  return useHours(s, hours);
 }
 
 export function useHours(s: GameState, hours: number): ActionResult {
@@ -359,6 +365,12 @@ export function migrate(s: GameState): GameState {
   if (!s.skills) {
     // Saves from before SkillUp: you already know how to do what you've been doing.
     s.skills = { adsBasics: { progress: 4 }, searchAds: { progress: 4 }, researchTool: { progress: 0, active: true }, adSpy: { progress: 0, active: true } };
+  }
+  if (!s.flags.timeCosts) {
+    // Saves from before ad accounts and the economics course: keep what already worked.
+    s.flags.timeCosts = true;
+    if (s.skills.adsBasics || s.history.some((r) => r.pl.ads > 0)) s.flags.adAccount = true;
+    if (s.skills.adsBasics) s.skills.economics ??= { progress: 3 };
   }
   s.difficulty ??= 'normal';
   if (!s.rivals) initRivals(s);

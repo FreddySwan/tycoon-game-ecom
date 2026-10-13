@@ -17,11 +17,16 @@ import { SourceMart } from './apps/SourceMart';
 import { Team } from './apps/Team';
 import { Wall } from './apps/Wall';
 import { Skills } from './apps/Skills';
-import { withIcons } from './icons';
+import { Icon, type IconName } from './icons';
 
 interface Tab {
   id: TabId;
   label: string;
+  /** Tab title when tabs get narrow. */
+  short: string;
+  icon: IconName;
+  /** Where this "website" lives; {brand} becomes your brand's slug. */
+  url: string;
   show: (s: GameState) => boolean;
   render: () => ReactNode;
 }
@@ -29,30 +34,23 @@ interface Tab {
 const hasProduct = (s: GameState) => s.productOrder.length > 0;
 
 const TABS: Tab[] = [
-  { id: 'products', label: '📈 Products', show: () => true, render: () => <Products /> },
-  { id: 'skills', label: '🎓 SkillUp', show: () => true, render: () => <Skills /> },
-  { id: 'source', label: '🏭 SourceMart', show: hasProduct, render: () => <SourceMart /> },
-  { id: 'store', label: '🛍️ ShopBloc', show: hasProduct, render: () => <ShopBloc /> },
-  { id: 'offer', label: '🏷️ Offer', show: hasProduct, render: () => <OfferApp /> },
-  { id: 'ads', label: '📣 Ads', show: hasProduct, render: () => <Ads /> },
-  { id: 'channels', label: '🛒 Channels', show: (s) => s.stage >= 2, render: () => <Channels /> },
-  { id: 'ops', label: '📦 Ops', show: hasProduct, render: () => <Ops /> },
-  { id: 'team', label: '👥 Team', show: (s) => s.stage >= 2, render: () => <Team /> },
-  { id: 'inbox', label: '📬 Inbox', show: hasProduct, render: () => <Inbox /> },
-  { id: 'customers', label: '💌 Customers', show: (s) => s.shipped > 0, render: () => <Customers /> },
-  { id: 'finance', label: '💵 Finance', show: () => true, render: () => <Finance /> },
-  { id: 'company', label: '🏢 Company', show: () => true, render: () => <Company /> },
-  { id: 'wall', label: '📌 Wall', show: () => true, render: () => <Wall /> },
+  { id: 'products', label: 'Trend Scanner', short: 'Trends', icon: 'trendingUp', url: 'trendscanner.io/board', show: () => true, render: () => <Products /> },
+  { id: 'skills', label: 'SkillUp', short: 'Skills', icon: 'teach', url: 'skillup.com/my-learning', show: () => true, render: () => <Skills /> },
+  { id: 'source', label: 'SourceMart', short: 'Suppliers', icon: 'buildings', url: 'sourcemart.com/suppliers', show: hasProduct, render: () => <SourceMart /> },
+  { id: 'store', label: 'ShopBloc', short: 'Store', icon: 'shoppingBag', url: 'admin.shopbloc.com/{brand}/store', show: hasProduct, render: () => <ShopBloc /> },
+  { id: 'offer', label: 'Pricing', short: 'Pricing', icon: 'label', url: 'admin.shopbloc.com/{brand}/pricing', show: hasProduct, render: () => <OfferApp /> },
+  { id: 'ads', label: 'Scrollr Ads', short: 'Ads', icon: 'radioSignal', url: 'ads.scrollr.com/manager', show: hasProduct, render: () => <Ads /> },
+  { id: 'channels', label: 'Channels', short: 'Channels', icon: 'cart', url: 'sellers.bazaarly.com/hub', show: (s) => s.stage >= 2, render: () => <Channels /> },
+  { id: 'ops', label: 'Orders', short: 'Orders', icon: 'archive', url: '{brand}.app/orders', show: hasProduct, render: () => <Ops /> },
+  { id: 'team', label: 'Team', short: 'Team', icon: 'users', url: '{brand}.app/team', show: (s) => s.stage >= 2, render: () => <Team /> },
+  { id: 'inbox', label: 'Inbox', short: 'Inbox', icon: 'inbox', url: 'mail.{brand}.co/inbox', show: hasProduct, render: () => <Inbox /> },
+  { id: 'customers', label: 'Customers', short: 'CRM', icon: 'mailHeart', url: 'crm.shopbloc.com/{brand}', show: (s) => s.shipped > 0, render: () => <Customers /> },
+  { id: 'finance', label: 'Bank', short: 'Bank', icon: 'money', url: 'online.harborbank.com/business', show: () => true, render: () => <Finance /> },
+  { id: 'company', label: 'Company', short: 'Company', icon: 'building', url: '{brand}.co/company', show: () => true, render: () => <Company /> },
+  { id: 'wall', label: 'Wall', short: 'Wall', icon: 'pin', url: 'photos.{brand}.co/wall', show: () => true, render: () => <Wall /> },
 ];
 
-/** Apps grouped by what you're doing, so the laptop shows 4 groups instead of 15 tabs. */
-const GROUPS: { id: string; label: string; tabs: TabId[] }[] = [
-  { id: 'make', label: '📈 Products', tabs: ['products', 'skills', 'source'] },
-  { id: 'sell', label: '🛍️ Sell', tabs: ['store', 'offer', 'ads', 'channels', 'customers'] },
-  { id: 'run', label: '📦 Run', tabs: ['ops', 'team', 'inbox'] },
-  { id: 'money', label: '💵 Money', tabs: ['finance', 'company', 'wall'] },
-];
-
+/** The laptop: a browser with one tab per app, an address bar, and the app's page. */
 export function Laptop() {
   const game = useGame((s) => s.game);
   const tab = useGame((s) => s.tab);
@@ -67,33 +65,35 @@ export function Laptop() {
   };
   const visible = TABS.filter((t) => t.show(game));
   const active = visible.find((t) => t.id === tab) ?? visible[0];
-  const groups = GROUPS.map((g) => ({ ...g, tabs: g.tabs.filter((id) => visible.some((t) => t.id === id)) })).filter((g) => g.tabs.length);
-  const group = groups.find((g) => g.tabs.includes(active.id)) ?? groups[0];
-  const groupBadge = (tabs: TabId[]) => tabs.reduce((a, id) => a + (typeof badges[id] === 'number' ? (badges[id] as number) : badges[id] ? 1 : 0), 0);
+  const slug = (game.brands[0]?.name || 'mybrand').toLowerCase().replace(/[^a-z0-9]+/g, '') || 'mybrand';
+  const url = active.url.replace('{brand}', slug);
 
   return (
     <div className="laptop">
-      <nav className="tabs groups">
-        {groups.map((g) => (
-          <button key={g.id} className={g.id === group.id ? 'on' : ''} onClick={() => setTab(g.tabs.includes(tab) ? tab : g.tabs[0])}>
-            {withIcons(g.label)}
-            {groupBadge(g.tabs) > 0 && g.id !== group.id && <span className="badge">{groupBadge(g.tabs)}</span>}
-          </button>
-        ))}
-      </nav>
-      <nav className="tabs subnav">
-        {group.tabs.map((id) => {
-          const t = TABS.find((x) => x.id === id)!;
-          return (
-            <button key={id} className={id === active.id ? 'on' : ''} onClick={() => setTab(id)}>
-              {withIcons(t.label)}
-              {!!badges[id] && <span className="badge">{badges[id]}</span>}
+      <div className="browser">
+        <nav className="tabstrip">
+          {visible.map((t) => (
+            <button key={t.id} className={`btab ${t.id === active.id ? 'on' : ''}`} onClick={() => setTab(t.id)} title={t.label}>
+              <Icon name={t.icon} size={15} />
+              <span className="btab-label">{t.id === active.id ? t.label : t.short}</span>
+              {!!badges[t.id] && <span className="badge">{badges[t.id]}</span>}
             </button>
-          );
-        })}
-      </nav>
-      <div className="screen">
-        <ErrorBoundary resetKey={active.id}>{active.render()}</ErrorBoundary>
+          ))}
+        </nav>
+        <div className="toolbar">
+          <span className="nav-btns" aria-hidden>
+            <Icon name="arrowRight" size={14} style={{ transform: 'scaleX(-1)' }} />
+            <Icon name="arrowRight" size={14} />
+            <Icon name="repeat" size={14} />
+          </span>
+          <div className="omnibox">
+            <Icon name="lock" size={12} /> <span className="muted">https://</span>
+            {url}
+          </div>
+        </div>
+        <div className="screen">
+          <ErrorBoundary resetKey={active.id}>{active.render()}</ErrorBoundary>
+        </div>
       </div>
     </div>
   );
